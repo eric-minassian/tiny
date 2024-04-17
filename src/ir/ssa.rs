@@ -1,51 +1,4 @@
-use std::{
-    cell::RefCell,
-    collections::{HashMap, LinkedList},
-    mem::discriminant,
-    rc::Rc,
-};
-
-#[derive(Debug, PartialEq, Eq)]
-pub struct IntermediateRepresentation {
-    ssa_count: u32,
-    constant_block: BasicBlock,
-    cur_block: BasicBlock,
-}
-
-impl IntermediateRepresentation {
-    pub fn new() -> Self {
-        Self {
-            ssa_count: 0,
-            constant_block: BasicBlock::new(),
-            cur_block: BasicBlock::new(),
-        }
-    }
-
-    pub fn from(ssa_count: u32, constant_block: BasicBlock, cur_block: BasicBlock) -> Self {
-        Self {
-            ssa_count,
-            constant_block,
-            cur_block,
-        }
-    }
-}
-
-#[derive(Debug, PartialEq, Eq)]
-pub struct BasicBlock {
-    identifier_map: HashMap<usize, u32>,
-    ssas: Vec<Rc<StaticSingleAssignment>>,
-    next_block: Option<Box<BasicBlock>>,
-}
-
-impl BasicBlock {
-    pub fn new() -> Self {
-        Self {
-            identifier_map: HashMap::new(),
-            ssas: Vec::new(),
-            next_block: None,
-        }
-    }
-}
+use std::{mem::discriminant, rc::Rc};
 
 #[derive(Debug, PartialEq, Eq)]
 pub struct StaticSingleAssignment {
@@ -67,8 +20,18 @@ impl StaticSingleAssignment {
         }
     }
 
-    pub fn check_dominators(&self, ssa: Rc<StaticSingleAssignment>) -> Option<u32> {
-        todo!()
+    pub fn check_dominators(&self, ssa: &StaticSingleAssignment) -> Option<u32> {
+        let mut dominator = self.dominator.as_ref();
+
+        while let Some(d) = dominator {
+            if d.operator == ssa.operator {
+                return Some(d.id);
+            }
+
+            dominator = d.dominator.as_ref();
+        }
+
+        None
     }
 }
 
@@ -107,12 +70,25 @@ mod tests {
     }
 
     #[test]
-    fn ssa_dominators() {
-        let ssa_1 = Rc::new(StaticSingleAssignment::new(1, Operator::Const(1), None));
+    fn ssa_check_dominators() {
+        let ssa_1 = Rc::new(StaticSingleAssignment::new(1, Operator::Add(1, 1), None));
         let ssa_2 = Rc::new(StaticSingleAssignment::new(
             2,
-            Operator::Const(2),
+            Operator::Add(1, 0),
             Some(Rc::clone(&ssa_1)),
         ));
+        let ssa_3 = Rc::new(StaticSingleAssignment::new(
+            3,
+            Operator::Add(1, 1),
+            Some(Rc::clone(&ssa_2)),
+        ));
+        let ssa_4 = Rc::new(StaticSingleAssignment::new(
+            4,
+            Operator::Add(3, 3),
+            Some(Rc::clone(&ssa_3)),
+        ));
+
+        assert_eq!(ssa_2.check_dominators(&ssa_3), Some(1));
+        assert_eq!(ssa_2.check_dominators(&ssa_4), None);
     }
 }

@@ -261,19 +261,43 @@ impl<'a> Parser<'a> {
 
 #[cfg(test)]
 mod tests {
-    use crate::ir::BasicBlock;
+    use std::{cell::RefCell, collections::HashMap, rc::Rc};
+
+    use crate::ir::{
+        block::BasicBlock,
+        ssa::{Operator, StaticSingleAssignment},
+    };
 
     use super::*;
 
     #[test]
     fn assignment() {
-        // let tokens = Tokenizer::new("main {let x <- 1}.");
-        // let mut parser = Parser::new(tokens);
-        // let ir = parser.generate_ir().unwrap();
+        let tokens = Tokenizer::new("main {let x <- 1}.");
+        let mut parser = Parser::new(tokens);
+        let ir = parser.generate_ir().unwrap();
+
+        let constant_block = Rc::new(RefCell::new(BasicBlock::from(
+            HashMap::from([(-1, 1)]),
+            vec![Rc::new(StaticSingleAssignment::new(
+                1,
+                Operator::Const(7),
+                None,
+            ))],
+            Vec::new(),
+            None,
+        )));
+
+        let main_block = BasicBlock::from(
+            HashMap::from([(-1, 1), (14, -1)]),
+            Vec::new(),
+            Vec::new(),
+            Some(Rc::clone(&constant_block)),
+        );
+
+        constant_block
 
         // let expected_ir = IntermediateRepresentation::from(1, BasicBlock::new(), BasicBlock::new());
 
         // assert_eq!(ir, expected_ir);
-        println!("Assignment Test")
     }
 }
