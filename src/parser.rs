@@ -57,11 +57,11 @@ impl<'a> Parser<'a> {
             todo_with_error!()
         }
 
-        self.match_token(Token::LPar, "Expected '(' symbol")?;
+        self.match_token(Token::LBrack, "Expected '{' symbol")?;
 
         self.stat_sequence(ir)?;
 
-        self.match_token(Token::RPar, "Expected ')' symbol")?;
+        self.match_token(Token::RBrack, "Expected '}' symbol")?;
         self.match_token(Token::Period, "Expected '.' symbol")?;
 
         todo!()
@@ -84,7 +84,9 @@ impl<'a> Parser<'a> {
     }
 
     fn stat_sequence(&mut self, ir: &mut IntermediateRepresentation) -> Result<()> {
-        todo!()
+        self.statement()?;
+
+        Ok(())
     }
 
     fn statement(&mut self) -> Result<()> {
@@ -278,25 +280,27 @@ mod tests {
 
         let constant_block = Rc::new(RefCell::new(BasicBlock::from(
             HashMap::from([(-1, 1)]),
-            vec![Rc::new(StaticSingleAssignment::new(
-                1,
-                Operator::Const(7),
-                None,
-            ))],
+            vec![StaticSingleAssignment::new(1, Operator::Const(7), None)],
             Vec::new(),
             None,
         )));
 
-        let main_block = BasicBlock::from(
+        let main_block = Rc::new(RefCell::new(BasicBlock::from(
             HashMap::from([(-1, 1), (14, -1)]),
             Vec::new(),
             Vec::new(),
-            Some(Rc::clone(&constant_block)),
-        );
+            Some(Rc::downgrade(&constant_block)),
+        )));
 
         constant_block
+            .borrow_mut()
+            .push_next_block(Rc::clone(&main_block));
 
-        // let expected_ir = IntermediateRepresentation::from(1, BasicBlock::new(), BasicBlock::new());
+        let expected_ir = IntermediateRepresentation::from(1, constant_block, main_block);
+
+        println!("{:?}", expected_ir);
+
+        panic!();
 
         // assert_eq!(ir, expected_ir);
     }

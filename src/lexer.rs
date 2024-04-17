@@ -52,7 +52,7 @@ pub enum Token {
     LPar,       // (
     RPar,       // )
     LBrack,     // {
-    RBRack,     // }
+    RBrack,     // }
     Semicolon,  // ;
     Comma,      // ,
     Period,     // .
@@ -226,7 +226,7 @@ impl Iterator for Tokenizer<'_> {
                 '(' => Some(Ok(self.consume_char(Token::LPar))),
                 ')' => Some(Ok(self.consume_char(Token::RPar))),
                 '{' => Some(Ok(self.consume_char(Token::LBrack))),
-                '}' => Some(Ok(self.consume_char(Token::RBRack))),
+                '}' => Some(Ok(self.consume_char(Token::RBrack))),
                 ';' => Some(Ok(self.consume_char(Token::Semicolon))),
                 ',' => Some(Ok(self.consume_char(Token::Comma))),
                 '.' => Some(Ok(self.consume_char(Token::Period))),
@@ -353,7 +353,7 @@ mod tests {
             Token::LPar,
             Token::RPar,
             Token::LBrack,
-            Token::RBRack,
+            Token::RBrack,
             Token::Semicolon,
             Token::Comma,
             Token::Period,

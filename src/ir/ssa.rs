@@ -1,14 +1,14 @@
-use std::{mem::discriminant, rc::Rc};
+use std::mem::discriminant;
 
 #[derive(Debug, PartialEq, Eq)]
-pub struct StaticSingleAssignment {
+pub struct StaticSingleAssignment<'a> {
     id: u32,
     operator: Operator,
-    dominator: Option<Rc<StaticSingleAssignment>>,
+    dominator: Option<&'a StaticSingleAssignment<'a>>,
 }
 
-impl StaticSingleAssignment {
-    pub fn new(id: u32, operator: Operator, dominator: Option<Rc<StaticSingleAssignment>>) -> Self {
+impl<'a> StaticSingleAssignment<'a> {
+    pub fn new(id: u32, operator: Operator, dominator: Option<&'a StaticSingleAssignment>) -> Self {
         if let Some(ssa) = &dominator {
             assert_eq!(discriminant(&operator), discriminant(&ssa.operator))
         }
@@ -21,14 +21,14 @@ impl StaticSingleAssignment {
     }
 
     pub fn check_dominators(&self, ssa: &StaticSingleAssignment) -> Option<u32> {
-        let mut dominator = self.dominator.as_ref();
+        let mut dominator = self.dominator;
 
         while let Some(d) = dominator {
             if d.operator == ssa.operator {
                 return Some(d.id);
             }
 
-            dominator = d.dominator.as_ref();
+            dominator = d.dominator;
         }
 
         None
@@ -64,29 +64,17 @@ mod tests {
     #[test]
     #[should_panic]
     fn ssa_different_operators() {
-        let ssa = Rc::new(StaticSingleAssignment::new(1, Operator::Const(1), None));
+        let ssa = StaticSingleAssignment::new(1, Operator::Const(1), None);
 
-        StaticSingleAssignment::new(2, Operator::Add(1, 1), Some(Rc::clone(&ssa)));
+        StaticSingleAssignment::new(2, Operator::Add(1, 1), Some(&ssa));
     }
 
     #[test]
     fn ssa_check_dominators() {
-        let ssa_1 = Rc::new(StaticSingleAssignment::new(1, Operator::Add(1, 1), None));
-        let ssa_2 = Rc::new(StaticSingleAssignment::new(
-            2,
-            Operator::Add(1, 0),
-            Some(Rc::clone(&ssa_1)),
-        ));
-        let ssa_3 = Rc::new(StaticSingleAssignment::new(
-            3,
-            Operator::Add(1, 1),
-            Some(Rc::clone(&ssa_2)),
-        ));
-        let ssa_4 = Rc::new(StaticSingleAssignment::new(
-            4,
-            Operator::Add(3, 3),
-            Some(Rc::clone(&ssa_3)),
-        ));
+        let ssa_1 = StaticSingleAssignment::new(1, Operator::Add(1, 1), None);
+        let ssa_2 = StaticSingleAssignment::new(2, Operator::Add(1, 0), Some(&ssa_1));
+        let ssa_3 = StaticSingleAssignment::new(3, Operator::Add(1, 1), Some(&ssa_2));
+        let ssa_4 = StaticSingleAssignment::new(4, Operator::Add(3, 3), Some(&ssa_3));
 
         assert_eq!(ssa_2.check_dominators(&ssa_3), Some(1));
         assert_eq!(ssa_2.check_dominators(&ssa_4), None);
