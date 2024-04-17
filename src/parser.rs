@@ -2,13 +2,14 @@ use std::iter::Peekable;
 
 use crate::{
     error::{Error, Result},
+    ir::IntermediateRepresentation,
     lexer::{Token, Tokenizer},
 };
 
-pub enum IntermediateResult {
-    Const(f64),
-    Var(u32),
-    Reg(u32),
+macro_rules! todo_with_error {
+    () => {
+        eprintln!("Error: Functionality not implemented yet");
+    };
 }
 
 pub struct Parser<'a> {
@@ -24,11 +25,13 @@ impl<'a> Parser<'a> {
         }
     }
 
-    // fn load(&mut self, res: &mut IntermediateResult) {
-    //     match res {
-    //         IntermediateResult::Var()
-    //     }
-    // }
+    pub fn generate_ir(&mut self) -> Result<IntermediateRepresentation> {
+        let mut ir = IntermediateRepresentation::new();
+
+        self.computation(&mut ir)?;
+
+        Ok(ir)
+    }
 
     fn match_token(&mut self, expected: Token, message: &str) -> Result<()> {
         if self
@@ -43,7 +46,24 @@ impl<'a> Parser<'a> {
         Ok(())
     }
 
-    fn computation(&mut self) -> Result<()> {
+    fn computation(&mut self, ir: &mut IntermediateRepresentation) -> Result<()> {
+        self.match_token(Token::Main, "Expected 'main' keyword")?;
+
+        if let Some(Ok(Token::Var)) = self.tokens.peek() {
+            todo_with_error!()
+        }
+
+        while let Some(Ok(Token::Call)) = self.tokens.peek() {
+            todo_with_error!()
+        }
+
+        self.match_token(Token::LPar, "Expected '(' symbol")?;
+
+        self.stat_sequence(ir)?;
+
+        self.match_token(Token::RPar, "Expected ')' symbol")?;
+        self.match_token(Token::Period, "Expected '.' symbol")?;
+
         todo!()
     }
 
@@ -63,7 +83,7 @@ impl<'a> Parser<'a> {
         todo!()
     }
 
-    fn stat_sequence(&mut self) -> Result<()> {
+    fn stat_sequence(&mut self, ir: &mut IntermediateRepresentation) -> Result<()> {
         todo!()
     }
 
@@ -92,41 +112,43 @@ impl<'a> Parser<'a> {
     }
 
     fn while_statement(&mut self) -> Result<()> {
-        self.match_token(Token::While, "Expected 'while' keyword")?;
+        // self.match_token(Token::While, "Expected 'while' keyword")?;
 
-        let _ = self.relation()?;
+        // let _ = self.relation()?;
 
-        self.match_token(Token::Do, "Expected 'do' keyword")?;
+        // self.match_token(Token::Do, "Expected 'do' keyword")?;
 
-        let _ = self.stat_sequence()?;
+        // let _ = self.stat_sequence()?;
 
-        self.match_token(Token::Od, "Expected 'od' keyword")?;
+        // self.match_token(Token::Od, "Expected 'od' keyword")?;
 
-        Ok(())
+        // Ok(())
+        todo!()
     }
 
     fn if_statement(&mut self) -> Result<()> {
-        self.match_token(Token::If, "Expected 'if' keyword")?;
+        // self.match_token(Token::If, "Expected 'if' keyword")?;
 
-        let _ = self.relation()?;
+        // let _ = self.relation()?;
 
-        self.match_token(Token::Then, "Expected 'then' keyword")?;
+        // self.match_token(Token::Then, "Expected 'then' keyword")?;
 
-        let _ = self.stat_sequence()?;
+        // let _ = self.stat_sequence()?;
 
-        if *self
-            .tokens
-            .peek()
-            .ok_or_else(|| Error::SyntaxError("Expected 'fi' keyword".into()))?
-            == Ok(Token::Else)
-        {
-            self.tokens.next();
-            let _ = self.stat_sequence();
-        }
+        // if *self
+        //     .tokens
+        //     .peek()
+        //     .ok_or_else(|| Error::SyntaxError("Expected 'fi' keyword".into()))?
+        //     == Ok(Token::Else)
+        // {
+        //     self.tokens.next();
+        //     let _ = self.stat_sequence();
+        // }
 
-        self.match_token(Token::Fi, "expected 'fi' keyword".into())?;
+        // self.match_token(Token::Fi, "expected 'fi' keyword".into())?;
 
-        Ok(())
+        // Ok(())
+        todo!()
     }
 
     fn func_call(&mut self) -> Result<()> {
@@ -234,5 +256,19 @@ impl<'a> Parser<'a> {
             Ok(_) => self.func_call(),
             Err(e) => Err(e.clone()),
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn assignment() {
+        let tokens = Tokenizer::new("main {let x <- 1}.");
+        let mut parser = Parser::new(tokens);
+        let ir = parser.generate_ir().unwrap();
+
+        assert_eq!()
     }
 }
