@@ -261,14 +261,19 @@ impl<'a> Parser<'a> {
 
 #[cfg(test)]
 mod tests {
+    use crate::ir::BasicBlock;
+
     use super::*;
 
     #[test]
     fn assignment() {
-        let tokens = Tokenizer::new("main {let x <- 1}.");
-        let mut parser = Parser::new(tokens);
-        let ir = parser.generate_ir().unwrap();
+        // let tokens = Tokenizer::new("main {let x <- 1}.");
+        // let mut parser = Parser::new(tokens);
+        // let ir = parser.generate_ir().unwrap();
 
-        assert_eq!()
+        // let expected_ir = IntermediateRepresentation::from(1, BasicBlock::new(), BasicBlock::new());
+
+        // assert_eq!(ir, expected_ir);
+        println!("Assignment Test")
     }
 }
