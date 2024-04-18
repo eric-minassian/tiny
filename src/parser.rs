@@ -15,6 +15,7 @@ macro_rules! todo_with_error {
 pub struct Parser<'a> {
     tokens: Peekable<Tokenizer<'a>>,
     instructions: Vec<String>,
+    ir: IntermediateRepresentation<'a>,
 }
 
 impl<'a> Parser<'a> {
@@ -22,15 +23,8 @@ impl<'a> Parser<'a> {
         Self {
             tokens: tokens.peekable(),
             instructions: Vec::new(),
+            ir: IntermediateRepresentation::new(),
         }
-    }
-
-    pub fn generate_ir(&mut self) -> Result<IntermediateRepresentation> {
-        let mut ir = IntermediateRepresentation::new();
-
-        self.computation(&mut ir)?;
-
-        Ok(ir)
     }
 
     fn match_token(&mut self, expected: Token, message: &str) -> Result<()> {
@@ -46,7 +40,7 @@ impl<'a> Parser<'a> {
         Ok(())
     }
 
-    fn computation(&mut self, ir: &mut IntermediateRepresentation) -> Result<()> {
+    fn computation(&mut self) -> Result<()> {
         self.match_token(Token::Main, "Expected 'main' keyword")?;
 
         if let Some(Ok(Token::Var)) = self.tokens.peek() {
@@ -59,12 +53,12 @@ impl<'a> Parser<'a> {
 
         self.match_token(Token::LBrack, "Expected '{' symbol")?;
 
-        self.stat_sequence(ir)?;
+        self.stat_sequence()?;
 
         self.match_token(Token::RBrack, "Expected '}' symbol")?;
         self.match_token(Token::Period, "Expected '.' symbol")?;
 
-        todo!()
+        Ok(())
     }
 
     fn func_body(&mut self) -> Result<()> {
@@ -83,7 +77,7 @@ impl<'a> Parser<'a> {
         todo!()
     }
 
-    fn stat_sequence(&mut self, ir: &mut IntermediateRepresentation) -> Result<()> {
+    fn stat_sequence(&mut self) -> Result<()> {
         self.statement()?;
 
         Ok(())
@@ -193,9 +187,12 @@ impl<'a> Parser<'a> {
             Token::Identifier(id) => {
                 self.match_token(Token::Assignment, "Expected '<-' symbol")?;
 
-                let _ = self.expression()?;
+                let instr_id = self.expression()?;
 
-                todo!()
+                self.ir
+                    .push_identifier_to_cur_block(id as i32, instr_id as i32);
+
+                Ok(())
             }
             _ => Err(Error::SyntaxError("Expected an identifier".to_string())),
         }
@@ -218,8 +215,8 @@ impl<'a> Parser<'a> {
         }
     }
 
-    fn expression(&mut self) -> Result<()> {
-        let _ = self.term()?;
+    fn expression(&mut self) -> Result<u32> {
+        let instr_id = self.term()?;
 
         while let Some(token) = self.tokens.peek() {
             match token {
@@ -229,11 +226,11 @@ impl<'a> Parser<'a> {
             }
         }
 
-        todo!()
+        Ok(instr_id)
     }
 
-    fn term(&mut self) -> Result<()> {
-        let _ = self.factor()?;
+    fn term(&mut self) -> Result<u32> {
+        let instr_id = self.factor()?;
 
         while let Some(token) = self.tokens.peek() {
             match token {
@@ -243,19 +240,27 @@ impl<'a> Parser<'a> {
             }
         }
 
-        todo!()
+        Ok(instr_id)
     }
 
-    fn factor(&mut self) -> Result<()> {
+    fn factor(&mut self) -> Result<u32> {
         match self
             .tokens
             .peek()
             .ok_or_else(|| Error::SyntaxError("Factor Error".to_string()))?
         {
             Ok(Token::Identifier(id)) => todo!(),
-            Ok(Token::Number(num)) => todo!(),
+            Ok(Token::Number(num)) => {
+                let instr_id = self.ir.add_constant(*num);
+                self.tokens.next();
+
+                Ok(instr_id)
+            }
             Ok(Token::LPar) => todo!(),
-            Ok(_) => self.func_call(),
+            Ok(_) => {
+                let _ = self.func_call();
+                todo!()
+            }
             Err(e) => Err(e.clone()),
         }
     }
@@ -263,45 +268,14 @@ impl<'a> Parser<'a> {
 
 #[cfg(test)]
 mod tests {
-    use std::{cell::RefCell, collections::HashMap, rc::Rc};
-
-    use crate::ir::{
-        block::BasicBlock,
-        ssa::{Operator, StaticSingleAssignment},
-    };
-
     use super::*;
 
     #[test]
     fn assignment() {
         let tokens = Tokenizer::new("main {let x <- 1}.");
         let mut parser = Parser::new(tokens);
-        let ir = parser.generate_ir().unwrap();
+        parser.computation().unwrap();
 
-        let constant_block = Rc::new(RefCell::new(BasicBlock::from(
-            HashMap::from([(-1, 1)]),
-            vec![StaticSingleAssignment::new(1, Operator::Const(7), None)],
-            Vec::new(),
-            None,
-        )));
-
-        let main_block = Rc::new(RefCell::new(BasicBlock::from(
-            HashMap::from([(-1, 1), (14, -1)]),
-            Vec::new(),
-            Vec::new(),
-            Some(Rc::downgrade(&constant_block)),
-        )));
-
-        constant_block
-            .borrow_mut()
-            .push_next_block(Rc::clone(&main_block));
-
-        let expected_ir = IntermediateRepresentation::from(1, constant_block, main_block);
-
-        println!("{:?}", expected_ir);
-
-        panic!();
-
-        // assert_eq!(ir, expected_ir);
+        panic!("{:?}", parser.ir);
     }
 }
