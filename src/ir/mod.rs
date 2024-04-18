@@ -1,8 +1,9 @@
 pub mod block;
-pub mod gen;
 pub mod ssa;
 
 use std::collections::HashMap;
+
+use crate::lexer::IdentifierId;
 
 use self::{
     block::Body,
@@ -20,11 +21,17 @@ impl<'a> IrStore<'a> {
             bodies: HashMap::new(),
         }
     }
+
+    pub fn insert(&mut self, name: String, body: Body<'a>) {
+        self.bodies.insert(name, body);
+    }
 }
+
+pub type InstructionId = u32;
 
 #[derive(Debug, PartialEq, Clone)]
 pub struct ConstBody<'a> {
-    val_map: HashMap<u32, u32>,
+    val_map: HashMap<IdentifierId, InstructionId>,
     instructions: Vec<Instruction<'a>>,
 }
 
@@ -36,13 +43,17 @@ impl<'a> ConstBody<'a> {
         }
     }
 
-    pub fn insert(&mut self, value: u32, instruction_id: u32) {
+    pub fn insert(&mut self, value: u32, instruction_id: InstructionId) {
         // If value doen't exist in the map, insert it
-        if !self.val_map.contains_key(&value) {
+        if !self.val_map.contains_key(&(value as IdentifierId)) {
             let instruction = Instruction::new(instruction_id, Operator::Const(value), None);
 
-            self.val_map.insert(value, instruction_id);
+            self.val_map.insert(value as IdentifierId, instruction_id);
             self.instructions.push(instruction);
         }
+    }
+
+    pub fn get_instructions(&self) -> &Vec<Instruction<'a>> {
+        &self.instructions
     }
 }

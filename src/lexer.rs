@@ -2,6 +2,8 @@ use std::{iter::Peekable, str::Chars};
 
 use crate::error::{Error, Result};
 
+pub type IdentifierId = usize;
+
 const RADIX: u32 = 10;
 const RESERVED_WORDS_COUNT: usize = 14;
 

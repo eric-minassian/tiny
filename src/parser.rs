@@ -2,7 +2,10 @@ use std::iter::Peekable;
 
 use crate::{
     error::{Error, Result},
-    ir::{ConstBody, IrStore},
+    ir::{
+        block::{BasicBlock, BasicBlockData, Body, ControlFlowEdge},
+        ConstBody, InstructionId, IrStore,
+    },
     lexer::{Token, Tokenizer},
 };
 
@@ -12,20 +15,24 @@ macro_rules! todo_with_error {
     };
 }
 
-pub struct Parser<'a, 'b, 'c> {
+pub struct Parser<'a, 'b> {
     tokens: Peekable<Tokenizer<'a>>,
     instruction_counter: u32,
     store: IrStore<'b>,
-    const_body: ConstBody<'c>,
+    const_body: ConstBody<'b>,
+    cur_body: Body<'b>,
+    cur_block: BasicBlock,
 }
 
-impl<'a, 'b, 'c> Parser<'a, 'b, 'c> {
+impl<'a, 'b> Parser<'a, 'b> {
     pub fn new(tokens: Tokenizer<'a>) -> Self {
         Self {
             tokens: tokens.peekable(),
-            instruction_counter: 0,
+            instruction_counter: 1,
             store: IrStore::new(),
             const_body: ConstBody::new(),
+            cur_body: Body::new(),
+            cur_block: 0,
         }
     }
 
@@ -82,6 +89,17 @@ impl<'a, 'b, 'c> Parser<'a, 'b, 'c> {
     fn stat_sequence(&mut self) -> Result<()> {
         self.statement()?;
 
+        self.cur_body.insert_block(BasicBlockData::from(
+            self.const_body.get_instructions().clone(),
+            ControlFlowEdge::Fallthrough(self.cur_block),
+        ));
+
+        self.cur_body
+            .get_mut_block(self.cur_block)
+            .update_dom(self.cur_block + 1);
+
+        self.store.insert("main".to_string(), self.cur_body.clone());
+
         Ok(())
     }
 
@@ -101,12 +119,14 @@ impl<'a, 'b, 'c> Parser<'a, 'b, 'c> {
     }
 
     fn return_statement(&mut self) -> Result<()> {
-        self.match_token(Token::Return, "Expected 'return' keyword")?;
+        // self.match_token(Token::Return, "Expected 'return' keyword")?;
 
-        match self.expression() {
-            Ok(_) => todo!(),
-            Err(_) => todo!(),
-        }
+        // match self.expression() {
+        //     Ok(_) => todo!(),
+        //     Err(_) => todo!(),
+        // }
+
+        todo!()
     }
 
     fn while_statement(&mut self) -> Result<()> {
@@ -150,32 +170,34 @@ impl<'a, 'b, 'c> Parser<'a, 'b, 'c> {
     }
 
     fn func_call(&mut self) -> Result<()> {
-        self.match_token(Token::Call, "Expected 'call' keyword")?;
+        // self.match_token(Token::Call, "Expected 'call' keyword")?;
 
-        match self
-            .tokens
-            .next()
-            .ok_or_else(|| Error::SyntaxError("Expected Another Token".to_string()))??
-        {
-            Token::Identifier(id) => {
-                // @TODO: Functions without parameters can be called with or without parentheses
-                self.match_token(Token::LPar, "Expected '(' symbol")?;
+        // match self
+        //     .tokens
+        //     .next()
+        //     .ok_or_else(|| Error::SyntaxError("Expected Another Token".to_string()))??
+        // {
+        //     Token::Identifier(id) => {
+        //         // @TODO: Functions without parameters can be called with or without parentheses
+        //         self.match_token(Token::LPar, "Expected '(' symbol")?;
 
-                let _ = self.expression()?;
+        //         let _ = self.expression()?;
 
-                while let Some(token) = self.tokens.peek() {
-                    match token {
-                        Ok(Token::Comma) => {
-                            let _ = self.expression()?;
-                        }
-                        _ => break,
-                    }
-                }
+        //         while let Some(token) = self.tokens.peek() {
+        //             match token {
+        //                 Ok(Token::Comma) => {
+        //                     let _ = self.expression()?;
+        //                 }
+        //                 _ => break,
+        //             }
+        //         }
 
-                todo!()
-            }
-            _ => Err(Error::SyntaxError("Expected an identifier".to_string())),
-        }
+        //         todo!()
+        //     }
+        //     _ => Err(Error::SyntaxError("Expected an identifier".to_string())),
+        // }
+
+        todo!()
     }
 
     fn assignment(&mut self) -> Result<()> {
@@ -186,13 +208,14 @@ impl<'a, 'b, 'c> Parser<'a, 'b, 'c> {
             .next()
             .ok_or_else(|| Error::SyntaxError("Expected Another Token".to_string()))??
         {
-            Token::Identifier(id) => {
+            Token::Identifier(identifier_id) => {
                 self.match_token(Token::Assignment, "Expected '<-' symbol")?;
 
-                let instr_id = self.expression()?;
+                let instruction_id = self.expression()?;
 
-                self.store
-                    .push_identifier_to_cur_block(id as i32, instr_id as i32);
+                self.cur_body
+                    .get_mut_block(self.cur_block)
+                    .insert_identifier(identifier_id, instruction_id);
 
                 Ok(())
             }
@@ -201,23 +224,25 @@ impl<'a, 'b, 'c> Parser<'a, 'b, 'c> {
     }
 
     fn relation(&mut self) -> Result<()> {
-        let _ = self.expression()?;
+        // let _ = self.expression()?;
 
-        match self
-            .tokens
-            .next()
-            .ok_or_else(|| Error::SyntaxError("Expected a relOp".to_string()))??
-        {
-            Token::RelOp(_) => {
-                let _ = self.expression()?;
+        // match self
+        //     .tokens
+        //     .next()
+        //     .ok_or_else(|| Error::SyntaxError("Expected a relOp".to_string()))??
+        // {
+        //     Token::RelOp(_) => {
+        //         let _ = self.expression()?;
 
-                todo!()
-            }
-            _ => Err(Error::SyntaxError("Expected a relOp".to_string())),
-        }
+        //         todo!()
+        //     }
+        //     _ => Err(Error::SyntaxError("Expected a relOp".to_string())),
+        // }
+
+        todo!()
     }
 
-    fn expression(&mut self) -> Result<u32> {
+    fn expression(&mut self) -> Result<InstructionId> {
         let instr_id = self.term()?;
 
         while let Some(token) = self.tokens.peek() {
@@ -231,7 +256,7 @@ impl<'a, 'b, 'c> Parser<'a, 'b, 'c> {
         Ok(instr_id)
     }
 
-    fn term(&mut self) -> Result<u32> {
+    fn term(&mut self) -> Result<InstructionId> {
         let instr_id = self.factor()?;
 
         while let Some(token) = self.tokens.peek() {
@@ -245,7 +270,7 @@ impl<'a, 'b, 'c> Parser<'a, 'b, 'c> {
         Ok(instr_id)
     }
 
-    fn factor(&mut self) -> Result<u32> {
+    fn factor(&mut self) -> Result<InstructionId> {
         match self
             .tokens
             .peek()
@@ -253,11 +278,12 @@ impl<'a, 'b, 'c> Parser<'a, 'b, 'c> {
         {
             Ok(Token::Identifier(id)) => todo!(),
             Ok(Token::Number(num)) => {
-                self.const_body.insert(*num, self.instruction_counter);
+                let instruction_id = self.instruction_counter;
+                self.const_body.insert(*num, instruction_id);
                 self.instruction_counter += 1;
                 self.tokens.next();
 
-                Ok(self.instruction_counter - 1)
+                Ok(instruction_id)
             }
             Ok(Token::LPar) => todo!(),
             Ok(_) => {
@@ -279,6 +305,6 @@ mod tests {
         let mut parser = Parser::new(tokens);
         parser.computation().unwrap();
 
-        panic!("{:?}", parser.store);
+        panic!("{:#?}", parser.store);
     }
 }
