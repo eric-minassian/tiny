@@ -3,7 +3,7 @@ use std::{cell::RefCell, iter::Peekable, rc::Rc};
 use crate::{
     error::{Error, Result},
     ir::{
-        block::{BasicBlockData, Body, ControlFlowEdge},
+        block::{BasicBlock, Body, ControlFlowEdge},
         ConstBody, InstructionId, IrStore,
     },
     lexer::{Token, Tokenizer},
@@ -21,7 +21,7 @@ pub struct Parser<'a> {
     store: IrStore<'a>,
     const_body: ConstBody<'a>,
     cur_body: Option<Body<'a>>,
-    cur_block: Option<Rc<RefCell<BasicBlockData<'a>>>>,
+    cur_block: Option<Rc<RefCell<BasicBlock<'a>>>>,
 }
 
 impl<'a> Parser<'a> {
@@ -88,9 +88,10 @@ impl<'a> Parser<'a> {
 
     fn stat_sequence(&mut self) -> Result<()> {
         let mut cur_body = Body::new();
-        let cur_block = Rc::new(RefCell::new(BasicBlockData::new()));
+        let cur_block = Rc::new(RefCell::new(BasicBlock::new()));
 
-        cur_body.insert_block(Rc::clone(&cur_block));
+        // cur_body.insert_block(Rc::clone(&cur_block));
+        cur_body.update_root(Rc::clone(&cur_block));
 
         self.cur_body = Some(cur_body);
         self.cur_block = Some(cur_block);
@@ -98,16 +99,10 @@ impl<'a> Parser<'a> {
         self.statement()?;
 
         // Create Const Block
-        let const_block = Rc::new(RefCell::new(BasicBlockData::from(
+        let const_block = Rc::new(RefCell::new(BasicBlock::from(
             self.const_body.get_instructions().clone(),
             ControlFlowEdge::Fallthrough(Rc::clone(self.cur_block.as_ref().unwrap())),
         )));
-
-        // Insert Const Block
-        self.cur_body
-            .as_mut()
-            .unwrap()
-            .insert_block(Rc::clone(&const_block));
 
         // Update Dominator
         self.cur_block

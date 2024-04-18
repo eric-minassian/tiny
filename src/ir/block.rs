@@ -10,40 +10,28 @@ use super::{ssa::Instruction, InstructionId};
 
 #[derive(Debug)]
 pub struct Body<'a> {
-    blocks: Vec<Rc<RefCell<BasicBlockData<'a>>>>,
-    root: Option<Rc<RefCell<BasicBlockData<'a>>>>,
+    root: Option<Rc<RefCell<BasicBlock<'a>>>>,
 }
 
 impl<'a> Body<'a> {
     pub fn new() -> Self {
-        Self {
-            blocks: vec![],
-            root: None,
-        }
+        Self { root: None }
     }
 
-    pub fn insert_block(&mut self, block: Rc<RefCell<BasicBlockData<'a>>>) {
-        if self.root.is_none() {
-            self.root = Some(Rc::clone(&block));
-        }
-
-        self.blocks.push(block);
-    }
-
-    pub fn update_root(&mut self, root: Rc<RefCell<BasicBlockData<'a>>>) {
+    pub fn update_root(&mut self, root: Rc<RefCell<BasicBlock<'a>>>) {
         self.root = Some(root);
     }
 }
 
 #[derive(Debug)]
-pub struct BasicBlockData<'a> {
+pub struct BasicBlock<'a> {
     body: Vec<Instruction<'a>>,
     identifier_map: HashMap<IdentifierId, InstructionId>,
     edge: ControlFlowEdge<'a>,
-    dominator: Option<Weak<RefCell<BasicBlockData<'a>>>>,
+    dominator: Option<Weak<RefCell<BasicBlock<'a>>>>,
 }
 
-impl<'a> BasicBlockData<'a> {
+impl<'a> BasicBlock<'a> {
     pub fn new() -> Self {
         Self {
             body: Vec::new(),
@@ -70,7 +58,7 @@ impl<'a> BasicBlockData<'a> {
         self.identifier_map.insert(identifier, instruction);
     }
 
-    pub fn update_dominator(&mut self, dom: Weak<RefCell<BasicBlockData<'a>>>) {
+    pub fn update_dominator(&mut self, dom: Weak<RefCell<BasicBlock<'a>>>) {
         self.dominator = Some(dom);
     }
 }
@@ -78,15 +66,12 @@ impl<'a> BasicBlockData<'a> {
 #[derive(Debug, Clone)]
 pub enum ControlFlowEdge<'a> {
     Leaf,
-    Fallthrough(Rc<RefCell<BasicBlockData<'a>>>),
-    Branch(Rc<RefCell<BasicBlockData<'a>>>),
+    Fallthrough(Rc<RefCell<BasicBlock<'a>>>),
+    Branch(Rc<RefCell<BasicBlock<'a>>>),
     IfStmt(
-        Rc<RefCell<BasicBlockData<'a>>>,
-        Option<Rc<RefCell<BasicBlockData<'a>>>>,
-        Rc<RefCell<BasicBlockData<'a>>>,
+        Rc<RefCell<BasicBlock<'a>>>,
+        Option<Rc<RefCell<BasicBlock<'a>>>>,
+        Rc<RefCell<BasicBlock<'a>>>,
     ),
-    Loop(
-        Rc<RefCell<BasicBlockData<'a>>>,
-        Rc<RefCell<BasicBlockData<'a>>>,
-    ),
+    Loop(Rc<RefCell<BasicBlock<'a>>>, Rc<RefCell<BasicBlock<'a>>>),
 }

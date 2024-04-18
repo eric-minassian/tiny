@@ -59,6 +59,11 @@ pub enum Operator {
     WriteNL,
 }
 
+#[derive(Debug)]
+pub struct InstructionDominators<'a> {
+    dominators: Vec<&'a Instruction<'a>>,
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
