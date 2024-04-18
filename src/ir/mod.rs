@@ -10,7 +10,7 @@ use self::{
     ssa::{Instruction, Operator},
 };
 
-#[derive(Debug, PartialEq, Clone)]
+#[derive(Debug)]
 pub struct IrStore<'a> {
     bodies: HashMap<String, Body<'a>>,
 }

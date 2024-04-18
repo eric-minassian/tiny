@@ -1,14 +1,16 @@
 use std::mem::discriminant;
 
+pub type InstructionId = u32;
+
 #[derive(Debug, PartialEq, Clone)]
 pub struct Instruction<'a> {
-    id: u32,
+    id: InstructionId,
     operator: Operator,
     dominator: Option<&'a Instruction<'a>>,
 }
 
 impl<'a> Instruction<'a> {
-    pub fn new(id: u32, operator: Operator, dominator: Option<&'a Instruction>) -> Self {
+    pub fn new(id: InstructionId, operator: Operator, dominator: Option<&'a Instruction>) -> Self {
         if let Some(ssa) = &dominator {
             assert_eq!(discriminant(&operator), discriminant(&ssa.operator))
         }
@@ -20,7 +22,7 @@ impl<'a> Instruction<'a> {
         }
     }
 
-    pub fn check_dominators(&self, ssa: &Instruction) -> Option<u32> {
+    pub fn check_dominators(&self, ssa: &Instruction) -> Option<InstructionId> {
         let mut dominator = self.dominator;
 
         while let Some(d) = dominator {
@@ -38,22 +40,22 @@ impl<'a> Instruction<'a> {
 #[derive(Debug, PartialEq, Clone)]
 pub enum Operator {
     Const(u32),
-    Add(u32, u32),
-    Sub(u32, u32),
-    Mul(u32, u32),
-    Div(u32, u32),
-    Cmp(u32, u32),
-    Phi(u32, u32),
+    Add(InstructionId, InstructionId),
+    Sub(InstructionId, InstructionId),
+    Mul(InstructionId, InstructionId),
+    Div(InstructionId, InstructionId),
+    Cmp(InstructionId, InstructionId),
+    Phi(InstructionId, InstructionId),
     End,
-    Bra(u32),
-    Bne(u32, u32),
-    Beq(u32, u32),
-    Ble(u32, u32),
-    Blt(u32, u32),
-    Bge(u32, u32),
-    Bgt(u32, u32),
+    Bra(InstructionId),
+    Bne(InstructionId, InstructionId),
+    Beq(InstructionId, InstructionId),
+    Ble(InstructionId, InstructionId),
+    Blt(InstructionId, InstructionId),
+    Bge(InstructionId, InstructionId),
+    Bgt(InstructionId, InstructionId),
     Read,
-    Write(u32),
+    Write(InstructionId),
     WriteNL,
 }
 
