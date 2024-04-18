@@ -1,51 +1,48 @@
-use std::{cell::RefCell, rc::Rc};
-
-use self::{block::BasicBlock, ssa::StaticSingleAssignment};
-
 pub mod block;
+pub mod gen;
 pub mod ssa;
 
-#[derive(Debug)]
-pub struct IntermediateRepresentation<'a> {
-    ssa_count: u32,
-    constant_block: BasicBlock<'a>,
-    cur_block: &'a mut BasicBlock<'a>,
+use std::collections::HashMap;
+
+use self::{
+    block::Body,
+    ssa::{Instruction, Operator},
+};
+
+#[derive(Debug, PartialEq, Clone)]
+pub struct IrStore<'a> {
+    bodies: HashMap<String, Body<'a>>,
 }
 
-impl<'a> IntermediateRepresentation<'a> {
+impl<'a> IrStore<'a> {
     pub fn new() -> Self {
-        let mut constant_block = BasicBlock::new();
-        let mut cur_block = BasicBlock::new();
-
-        constant_block.push_child_block(cur_block);
-
         Self {
-            ssa_count: 1,
-            constant_block: constant_block,
-            cur_block: &mut cur_block,
+            bodies: HashMap::new(),
+        }
+    }
+}
+
+#[derive(Debug, PartialEq, Clone)]
+pub struct ConstBody<'a> {
+    val_map: HashMap<u32, u32>,
+    instructions: Vec<Instruction<'a>>,
+}
+
+impl<'a> ConstBody<'a> {
+    pub fn new() -> Self {
+        Self {
+            val_map: HashMap::new(),
+            instructions: Vec::new(),
         }
     }
 
-    pub fn push_identifier_to_cur_block(&mut self, identifier: i32, value: i32) {
-        let mut cur_block = self.cur_block.borrow_mut();
-        cur_block.push_identifier(identifier, value);
-    }
+    pub fn insert(&mut self, value: u32, instruction_id: u32) {
+        // If value doen't exist in the map, insert it
+        if !self.val_map.contains_key(&value) {
+            let instruction = Instruction::new(instruction_id, Operator::Const(value), None);
 
-    pub fn add_constant(&mut self, value: u32) -> u32 {
-        let mut constant_block = self.constant_block.borrow_mut();
-        constant_block.push_ssa(StaticSingleAssignment::new(
-            self.ssa_count,
-            ssa::Operator::Const(value),
-            None,
-        ));
-
-        drop(constant_block);
-
-        let mut cur_block = self.cur_block.borrow_mut();
-        cur_block.push_identifier(-1 * value as i32, self.ssa_count as i32);
-
-        self.ssa_count += 1;
-
-        self.ssa_count - 1
+            self.val_map.insert(value, instruction_id);
+            self.instructions.push(instruction);
+        }
     }
 }

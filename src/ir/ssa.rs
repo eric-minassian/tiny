@@ -1,14 +1,14 @@
 use std::mem::discriminant;
 
-#[derive(Debug, PartialEq, Eq)]
-pub struct StaticSingleAssignment<'a> {
+#[derive(Debug, PartialEq, Clone)]
+pub struct Instruction<'a> {
     id: u32,
     operator: Operator,
-    dominator: Option<&'a StaticSingleAssignment<'a>>,
+    dominator: Option<&'a Instruction<'a>>,
 }
 
-impl<'a> StaticSingleAssignment<'a> {
-    pub fn new(id: u32, operator: Operator, dominator: Option<&'a StaticSingleAssignment>) -> Self {
+impl<'a> Instruction<'a> {
+    pub fn new(id: u32, operator: Operator, dominator: Option<&'a Instruction>) -> Self {
         if let Some(ssa) = &dominator {
             assert_eq!(discriminant(&operator), discriminant(&ssa.operator))
         }
@@ -20,7 +20,7 @@ impl<'a> StaticSingleAssignment<'a> {
         }
     }
 
-    pub fn check_dominators(&self, ssa: &StaticSingleAssignment) -> Option<u32> {
+    pub fn check_dominators(&self, ssa: &Instruction) -> Option<u32> {
         let mut dominator = self.dominator;
 
         while let Some(d) = dominator {
@@ -35,7 +35,7 @@ impl<'a> StaticSingleAssignment<'a> {
     }
 }
 
-#[derive(Debug, PartialEq, Eq)]
+#[derive(Debug, PartialEq, Clone)]
 pub enum Operator {
     Const(u32),
     Add(u32, u32),
@@ -64,17 +64,17 @@ mod tests {
     #[test]
     #[should_panic]
     fn ssa_different_operators() {
-        let ssa = StaticSingleAssignment::new(1, Operator::Const(1), None);
+        let ssa = Instruction::new(1, Operator::Const(1), None);
 
-        StaticSingleAssignment::new(2, Operator::Add(1, 1), Some(&ssa));
+        Instruction::new(2, Operator::Add(1, 1), Some(&ssa));
     }
 
     #[test]
     fn ssa_check_dominators() {
-        let ssa_1 = StaticSingleAssignment::new(1, Operator::Add(1, 1), None);
-        let ssa_2 = StaticSingleAssignment::new(2, Operator::Add(1, 0), Some(&ssa_1));
-        let ssa_3 = StaticSingleAssignment::new(3, Operator::Add(1, 1), Some(&ssa_2));
-        let ssa_4 = StaticSingleAssignment::new(4, Operator::Add(3, 3), Some(&ssa_3));
+        let ssa_1 = Instruction::new(1, Operator::Add(1, 1), None);
+        let ssa_2 = Instruction::new(2, Operator::Add(1, 0), Some(&ssa_1));
+        let ssa_3 = Instruction::new(3, Operator::Add(1, 1), Some(&ssa_2));
+        let ssa_4 = Instruction::new(4, Operator::Add(3, 3), Some(&ssa_3));
 
         assert_eq!(ssa_2.check_dominators(&ssa_3), Some(1));
         assert_eq!(ssa_2.check_dominators(&ssa_4), None);

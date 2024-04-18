@@ -2,28 +2,30 @@ use std::iter::Peekable;
 
 use crate::{
     error::{Error, Result},
-    ir::IntermediateRepresentation,
+    ir::{ConstBody, IrStore},
     lexer::{Token, Tokenizer},
 };
 
 macro_rules! todo_with_error {
     () => {
-        eprintln!("Error: Functionality not implemented yet");
+        eprintln!("Error: Functionality not implemented yet")
     };
 }
 
-pub struct Parser<'a> {
+pub struct Parser<'a, 'b, 'c> {
     tokens: Peekable<Tokenizer<'a>>,
-    instructions: Vec<String>,
-    ir: IntermediateRepresentation<'a>,
+    instruction_counter: u32,
+    store: IrStore<'b>,
+    const_body: ConstBody<'c>,
 }
 
-impl<'a> Parser<'a> {
+impl<'a, 'b, 'c> Parser<'a, 'b, 'c> {
     pub fn new(tokens: Tokenizer<'a>) -> Self {
         Self {
             tokens: tokens.peekable(),
-            instructions: Vec::new(),
-            ir: IntermediateRepresentation::new(),
+            instruction_counter: 0,
+            store: IrStore::new(),
+            const_body: ConstBody::new(),
         }
     }
 
@@ -189,7 +191,7 @@ impl<'a> Parser<'a> {
 
                 let instr_id = self.expression()?;
 
-                self.ir
+                self.store
                     .push_identifier_to_cur_block(id as i32, instr_id as i32);
 
                 Ok(())
@@ -251,10 +253,11 @@ impl<'a> Parser<'a> {
         {
             Ok(Token::Identifier(id)) => todo!(),
             Ok(Token::Number(num)) => {
-                let instr_id = self.ir.add_constant(*num);
+                self.const_body.insert(*num, self.instruction_counter);
+                self.instruction_counter += 1;
                 self.tokens.next();
 
-                Ok(instr_id)
+                Ok(self.instruction_counter - 1)
             }
             Ok(Token::LPar) => todo!(),
             Ok(_) => {
@@ -276,6 +279,6 @@ mod tests {
         let mut parser = Parser::new(tokens);
         parser.computation().unwrap();
 
-        panic!("{:?}", parser.ir);
+        panic!("{:?}", parser.store);
     }
 }
