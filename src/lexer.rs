@@ -2,6 +2,8 @@ use std::{iter::Peekable, str::Chars};
 
 use crate::error::{Error, Result};
 
+pub type IdentifierId = usize;
+
 const RADIX: u32 = 10;
 const RESERVED_WORDS_COUNT: usize = 14;
 
@@ -29,16 +31,21 @@ const BUILTIN_FUNCTIONS: [(&str, Token); 3] = [
 ];
 
 #[derive(Debug, Clone, PartialEq, Eq)]
+pub enum RelOp {
+    Eq, // ==
+    Ne, // !=
+    Lt, // <
+    Le, // <=
+    Gt, // >
+    Ge, // >=
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Token {
     Number(u32),
     Identifier(usize),
+    RelOp(RelOp),
 
-    Eq,         // ==
-    Ne,         // !=
-    Lt,         // <
-    Le,         // <=
-    Gt,         // >
-    Ge,         // >=
     Mul,        // *
     Div,        // /
     Add,        // +
@@ -47,7 +54,7 @@ pub enum Token {
     LPar,       // (
     RPar,       // )
     LBrack,     // {
-    RBRack,     // }
+    RBrack,     // }
     Semicolon,  // ;
     Comma,      // ,
     Period,     // .
@@ -125,7 +132,7 @@ impl<'a> Tokenizer<'a> {
         }
     }
 
-    fn consume_builtin_funct(&mut self) -> Result<Token> {
+    fn consume_builtin_func(&mut self) -> Result<Token> {
         let mut buffer = String::new();
         while let Some(&ch) = self.chars.peek() {
             if ch.is_ascii_alphabetic() {
@@ -165,14 +172,14 @@ impl Iterator for Tokenizer<'_> {
 
         if let Some(&ch) = self.chars.peek() {
             match ch {
-                'A'..='Z' => Some(self.consume_builtin_funct()),
+                'A'..='Z' => Some(self.consume_builtin_func()),
                 'a'..='z' => Some(Ok(self.consume_alpha())),
                 '0'..='9' => Some(Ok(self.consume_number())),
 
                 '=' => {
                     self.chars.next();
                     match self.chars.next() {
-                        Some('=') => Some(Ok(Token::Eq)),
+                        Some('=') => Some(Ok(Token::RelOp(RelOp::Eq))),
                         _ => Some(Err(Error::SyntaxError(
                             "Expected '=' after '='".to_string(),
                         ))),
@@ -181,7 +188,7 @@ impl Iterator for Tokenizer<'_> {
                 '!' => {
                     self.chars.next();
                     match self.chars.next() {
-                        Some('=') => Some(Ok(Token::Ne)),
+                        Some('=') => Some(Ok(Token::RelOp(RelOp::Ne))),
                         _ => Some(Err(Error::SyntaxError(
                             "Expected '=' after '!'".to_string(),
                         ))),
@@ -193,13 +200,13 @@ impl Iterator for Tokenizer<'_> {
                     match self.chars.peek() {
                         Some('=') => {
                             self.chars.next();
-                            Some(Ok(Token::Le))
+                            Some(Ok(Token::RelOp(RelOp::Le)))
                         }
                         Some('-') => {
                             self.chars.next();
                             Some(Ok(Token::Assignment))
                         }
-                        _ => Some(Ok(Token::Lt)),
+                        _ => Some(Ok(Token::RelOp(RelOp::Lt))),
                     }
                 }
                 '>' => {
@@ -207,10 +214,10 @@ impl Iterator for Tokenizer<'_> {
                     match self.chars.peek() {
                         Some('=') => {
                             self.chars.next();
-                            Some(Ok(Token::Ge))
+                            Some(Ok(Token::RelOp(RelOp::Ge)))
                         }
 
-                        _ => Some(Ok(Token::Gt)),
+                        _ => Some(Ok(Token::RelOp(RelOp::Gt))),
                     }
                 }
 
@@ -221,7 +228,7 @@ impl Iterator for Tokenizer<'_> {
                 '(' => Some(Ok(self.consume_char(Token::LPar))),
                 ')' => Some(Ok(self.consume_char(Token::RPar))),
                 '{' => Some(Ok(self.consume_char(Token::LBrack))),
-                '}' => Some(Ok(self.consume_char(Token::RBRack))),
+                '}' => Some(Ok(self.consume_char(Token::RBrack))),
                 ';' => Some(Ok(self.consume_char(Token::Semicolon))),
                 ',' => Some(Ok(self.consume_char(Token::Comma))),
                 '.' => Some(Ok(self.consume_char(Token::Period))),
@@ -338,17 +345,17 @@ mod tests {
             Token::Sub,
             Token::Mul,
             Token::Div,
-            Token::Eq,
-            Token::Ne,
-            Token::Lt,
-            Token::Le,
-            Token::Gt,
-            Token::Ge,
+            Token::RelOp(RelOp::Eq),
+            Token::RelOp(RelOp::Ne),
+            Token::RelOp(RelOp::Lt),
+            Token::RelOp(RelOp::Le),
+            Token::RelOp(RelOp::Gt),
+            Token::RelOp(RelOp::Ge),
             Token::Assignment,
             Token::LPar,
             Token::RPar,
             Token::LBrack,
-            Token::RBRack,
+            Token::RBrack,
             Token::Semicolon,
             Token::Comma,
             Token::Period,
