@@ -22,6 +22,10 @@ impl<'a> IrStore<'a> {
         }
     }
 
+    pub fn from(bodies: HashMap<String, Body<'a>>) -> Self {
+        Self { bodies }
+    }
+
     pub fn insert(&mut self, name: String, body: Body<'a>) {
         self.bodies.insert(name, body);
     }

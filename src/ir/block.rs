@@ -18,6 +18,10 @@ impl<'a> Body<'a> {
         Self { root: None }
     }
 
+    pub fn from(root: Rc<RefCell<BasicBlock<'a>>>) -> Self {
+        Self { root: Some(root) }
+    }
+
     pub fn update_root(&mut self, root: Rc<RefCell<BasicBlock<'a>>>) {
         self.root = Some(root);
     }
@@ -32,21 +36,26 @@ pub struct BasicBlock<'a> {
 }
 
 impl<'a> BasicBlock<'a> {
-    pub fn new() -> Self {
-        Self {
-            body: Vec::new(),
-            identifier_map: HashMap::new(),
-            edge: ControlFlowEdge::Leaf,
-            dominator: None,
-        }
-    }
-
-    pub fn from(body: Vec<Instruction<'a>>, edge: ControlFlowEdge<'a>) -> Self {
+    pub fn new(body: Vec<Instruction<'a>>, edge: ControlFlowEdge<'a>) -> Self {
         Self {
             body,
             identifier_map: HashMap::new(),
             edge,
             dominator: None,
+        }
+    }
+
+    pub fn from(
+        body: Vec<Instruction<'a>>,
+        identifier_map: HashMap<IdentifierId, InstructionId>,
+        edge: ControlFlowEdge<'a>,
+        dominator: Option<Weak<RefCell<BasicBlock<'a>>>>,
+    ) -> Self {
+        Self {
+            body,
+            dominator,
+            edge,
+            identifier_map,
         }
     }
 
@@ -60,6 +69,10 @@ impl<'a> BasicBlock<'a> {
 
     pub fn update_dominator(&mut self, dom: Weak<RefCell<BasicBlock<'a>>>) {
         self.dominator = Some(dom);
+    }
+
+    pub fn update_edge(&mut self, edge: ControlFlowEdge<'a>) {
+        self.edge = edge;
     }
 }
 

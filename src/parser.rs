@@ -88,7 +88,10 @@ impl<'a> Parser<'a> {
 
     fn stat_sequence(&mut self) -> Result<()> {
         let mut cur_body = Body::new();
-        let cur_block = Rc::new(RefCell::new(BasicBlock::new()));
+        let cur_block = Rc::new(RefCell::new(BasicBlock::new(
+            Vec::new(),
+            ControlFlowEdge::Leaf,
+        )));
 
         // cur_body.insert_block(Rc::clone(&cur_block));
         cur_body.update_root(Rc::clone(&cur_block));
@@ -99,7 +102,7 @@ impl<'a> Parser<'a> {
         self.statement()?;
 
         // Create Const Block
-        let const_block = Rc::new(RefCell::new(BasicBlock::from(
+        let const_block = Rc::new(RefCell::new(BasicBlock::new(
             self.const_body.get_instructions().clone(),
             ControlFlowEdge::Fallthrough(Rc::clone(self.cur_block.as_ref().unwrap())),
         )));
@@ -321,6 +324,10 @@ impl<'a> Parser<'a> {
 
 #[cfg(test)]
 mod tests {
+    use std::collections::HashMap;
+
+    use crate::ir::ssa::{Instruction, Operator};
+
     use super::*;
 
     #[test]
@@ -329,6 +336,29 @@ mod tests {
         let mut parser = Parser::new(tokens);
         parser.computation().unwrap();
 
-        panic!("{:#?}", parser.store);
+        let const_block = Rc::new(RefCell::new(BasicBlock::from(
+            vec![Instruction::new(1, Operator::Const(1), None)],
+            HashMap::new(),
+            ControlFlowEdge::Leaf,
+            None,
+        )));
+        let main_block = Rc::new(RefCell::new(BasicBlock::from(
+            Vec::new(),
+            HashMap::from([(14, 1)]),
+            ControlFlowEdge::Leaf,
+            Some(Rc::downgrade(&const_block)),
+        )));
+
+        const_block
+            .borrow_mut()
+            .update_edge(ControlFlowEdge::Fallthrough(Rc::clone(&main_block)));
+
+        let main_body = Body::from(const_block);
+        let expected_ir = IrStore::from(HashMap::from([("main".to_string(), main_body)]));
+
+        let str1 = format!("{:?}", parser.store);
+        let str2 = format!("{:?}", expected_ir);
+
+        assert_eq!(str1, str2);
     }
 }
