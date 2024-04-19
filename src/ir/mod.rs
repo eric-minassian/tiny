@@ -10,7 +10,7 @@ use self::{
     ssa::{Instruction, Operator},
 };
 
-#[derive(Debug)]
+#[derive(Debug, PartialEq)]
 pub struct IrStore<'a> {
     bodies: HashMap<String, Body<'a>>,
 }
@@ -45,6 +45,10 @@ impl<'a> ConstBody<'a> {
             val_map: HashMap::new(),
             instructions: Vec::new(),
         }
+    }
+
+    pub fn get_instruction_id(&self, key: u32) -> Option<&InstructionId> {
+        self.val_map.get(&(key as IdentifierId))
     }
 
     pub fn insert(&mut self, value: u32, instruction_id: InstructionId) {
