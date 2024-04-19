@@ -47,6 +47,10 @@ impl<'a> ConstBody<'a> {
         }
     }
 
+    pub fn get_instruction_id(&self, key: u32) -> Option<&InstructionId> {
+        self.val_map.get(&(key as IdentifierId))
+    }
+
     pub fn insert(&mut self, value: u32, instruction_id: InstructionId) {
         // If value doen't exist in the map, insert it
         if !self.val_map.contains_key(&(value as IdentifierId)) {

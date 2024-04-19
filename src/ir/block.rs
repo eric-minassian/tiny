@@ -59,9 +59,9 @@ impl<'a> BasicBlock<'a> {
         }
     }
 
-    // pub fn insert_instruction(&mut self, instruction: Instruction<'a>) {
-    //     self.body.push(instruction);
-    // }
+    pub fn insert_instruction(&mut self, instruction: Instruction<'a>) {
+        self.body.push(instruction);
+    }
 
     pub fn insert_identifier(&mut self, identifier: IdentifierId, instruction: InstructionId) {
         self.identifier_map.insert(identifier, instruction);

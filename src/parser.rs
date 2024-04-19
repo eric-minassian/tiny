@@ -4,6 +4,7 @@ use crate::{
     error::{Error, Result},
     ir::{
         block::{BasicBlock, Body, ControlFlowEdge},
+        ssa::{Instruction, Operator},
         ConstBody, InstructionId, IrStore,
     },
     lexer::{Token, Tokenizer},
@@ -100,6 +101,21 @@ impl<'a> Parser<'a> {
         self.cur_block = Some(cur_block);
 
         self.statement()?;
+
+        while let Some(token) = self.tokens.peek() {
+            match token {
+                Ok(Token::Semicolon) => {
+                    self.tokens.next();
+                    match self.tokens.peek() {
+                        Some(Ok(
+                            Token::Let | Token::Call | Token::If | Token::While | Token::Return,
+                        )) => self.statement()?,
+                        _ => break,
+                    }
+                }
+                _ => break,
+            }
+        }
 
         // Create Const Block
         let const_block = Rc::new(RefCell::new(BasicBlock::new(
@@ -270,11 +286,30 @@ impl<'a> Parser<'a> {
     }
 
     fn expression(&mut self) -> Result<InstructionId> {
-        let instr_id = self.term()?;
+        let mut instr_id = self.term()?;
 
         while let Some(token) = self.tokens.peek() {
             match token {
-                Ok(Token::Add) => todo!(),
+                Ok(Token::Add) => {
+                    self.tokens.next();
+                    let instr_id2 = self.term()?;
+
+                    println! {"CURRENT COUNT: {}", self.instruction_counter};
+
+                    self.cur_block
+                        .as_ref()
+                        .unwrap()
+                        .borrow_mut()
+                        .insert_instruction(Instruction::new(
+                            self.instruction_counter,
+                            Operator::Add(instr_id, instr_id2),
+                            None,
+                        ));
+
+                    instr_id = self.instruction_counter;
+
+                    self.instruction_counter += 1
+                }
                 Ok(Token::Sub) => todo!(),
                 _ => break,
             }
@@ -305,12 +340,19 @@ impl<'a> Parser<'a> {
         {
             Ok(Token::Identifier(id)) => todo!(),
             Ok(Token::Number(num)) => {
-                let instruction_id = self.instruction_counter;
-                self.const_body.insert(*num, instruction_id);
-                self.instruction_counter += 1;
-                self.tokens.next();
+                if let Some(instruction_id) = self.const_body.get_instruction_id(*num) {
+                    self.tokens.next();
 
-                Ok(instruction_id)
+                    return Ok(*instruction_id);
+                } else {
+                    let instruction_id = self.instruction_counter;
+                    self.const_body.insert(*num, instruction_id);
+                    self.instruction_counter += 1;
+
+                    self.tokens.next();
+
+                    Ok(instruction_id)
+                }
             }
             Ok(Token::LPar) => todo!(),
             Ok(_) => {
@@ -345,6 +387,41 @@ mod tests {
         let main_block = Rc::new(RefCell::new(BasicBlock::from(
             Vec::new(),
             HashMap::from([(14, 1)]),
+            ControlFlowEdge::Leaf,
+            Some(Rc::downgrade(&const_block)),
+        )));
+
+        const_block
+            .borrow_mut()
+            .update_edge(ControlFlowEdge::Fallthrough(Rc::clone(&main_block)));
+
+        let main_body = Body::from(const_block);
+        let expected_ir = IrStore::from(HashMap::from([("main".to_string(), main_body)]));
+
+        let str1 = format!("{:?}", parser.store);
+        let str2 = format!("{:?}", expected_ir);
+
+        assert_eq!(str1, str2);
+    }
+
+    #[test]
+    fn assignment_with_math() {
+        let tokens = Tokenizer::new("main {let x <- 1; let z <- 1 + 2}.");
+        let mut parser = Parser::new(tokens);
+        parser.computation().unwrap();
+
+        let const_block = Rc::new(RefCell::new(BasicBlock::from(
+            vec![
+                Instruction::new(1, Operator::Const(1), None),
+                Instruction::new(2, Operator::Const(2), None),
+            ],
+            HashMap::new(),
+            ControlFlowEdge::Leaf,
+            None,
+        )));
+        let main_block = Rc::new(RefCell::new(BasicBlock::from(
+            vec![Instruction::new(3, Operator::Add(1, 2), None)],
+            HashMap::from([(15, 3), (14, 1)]),
             ControlFlowEdge::Leaf,
             Some(Rc::downgrade(&const_block)),
         )));
