@@ -10,7 +10,7 @@ use self::{
     ssa::{Instruction, Operator},
 };
 
-#[derive(Debug, PartialEq, Clone)]
+#[derive(Debug)]
 pub struct IrStore<'a> {
     bodies: HashMap<String, Body<'a>>,
 }
@@ -20,6 +20,10 @@ impl<'a> IrStore<'a> {
         Self {
             bodies: HashMap::new(),
         }
+    }
+
+    pub fn from(bodies: HashMap<String, Body<'a>>) -> Self {
+        Self { bodies }
     }
 
     pub fn insert(&mut self, name: String, body: Body<'a>) {

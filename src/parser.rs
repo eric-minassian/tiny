@@ -1,9 +1,9 @@
-use std::iter::Peekable;
+use std::{cell::RefCell, iter::Peekable, rc::Rc};
 
 use crate::{
     error::{Error, Result},
     ir::{
-        block::{BasicBlock, BasicBlockData, Body, ControlFlowEdge},
+        block::{BasicBlock, Body, ControlFlowEdge},
         ConstBody, InstructionId, IrStore,
     },
     lexer::{Token, Tokenizer},
@@ -15,24 +15,24 @@ macro_rules! todo_with_error {
     };
 }
 
-pub struct Parser<'a, 'b> {
+pub struct Parser<'a> {
     tokens: Peekable<Tokenizer<'a>>,
     instruction_counter: u32,
-    store: IrStore<'b>,
-    const_body: ConstBody<'b>,
-    cur_body: Body<'b>,
-    cur_block: BasicBlock,
+    store: IrStore<'a>,
+    const_body: ConstBody<'a>,
+    cur_body: Option<Body<'a>>,
+    cur_block: Option<Rc<RefCell<BasicBlock<'a>>>>,
 }
 
-impl<'a, 'b> Parser<'a, 'b> {
+impl<'a> Parser<'a> {
     pub fn new(tokens: Tokenizer<'a>) -> Self {
         Self {
             tokens: tokens.peekable(),
             instruction_counter: 1,
             store: IrStore::new(),
             const_body: ConstBody::new(),
-            cur_body: Body::new(),
-            cur_block: 0,
+            cur_body: None,
+            cur_block: None,
         }
     }
 
@@ -87,18 +87,43 @@ impl<'a, 'b> Parser<'a, 'b> {
     }
 
     fn stat_sequence(&mut self) -> Result<()> {
+        let mut cur_body = Body::new();
+        let cur_block = Rc::new(RefCell::new(BasicBlock::new(
+            Vec::new(),
+            ControlFlowEdge::Leaf,
+        )));
+
+        // cur_body.insert_block(Rc::clone(&cur_block));
+        cur_body.update_root(Rc::clone(&cur_block));
+
+        self.cur_body = Some(cur_body);
+        self.cur_block = Some(cur_block);
+
         self.statement()?;
 
-        self.cur_body.insert_block(BasicBlockData::from(
+        // Create Const Block
+        let const_block = Rc::new(RefCell::new(BasicBlock::new(
             self.const_body.get_instructions().clone(),
-            ControlFlowEdge::Fallthrough(self.cur_block),
-        ));
+            ControlFlowEdge::Fallthrough(Rc::clone(self.cur_block.as_ref().unwrap())),
+        )));
+
+        // Update Dominator
+        self.cur_block
+            .as_ref()
+            .unwrap()
+            .borrow_mut()
+            .update_dominator(Rc::downgrade(&const_block));
 
         self.cur_body
-            .get_mut_block(self.cur_block)
-            .update_dom(self.cur_block + 1);
+            .as_mut()
+            .unwrap()
+            .update_root(Rc::clone(&const_block));
 
-        self.store.insert("main".to_string(), self.cur_body.clone());
+        self.store
+            .insert("main".to_string(), self.cur_body.take().unwrap());
+
+        self.cur_block = None;
+        self.cur_body = None;
 
         Ok(())
     }
@@ -213,8 +238,10 @@ impl<'a, 'b> Parser<'a, 'b> {
 
                 let instruction_id = self.expression()?;
 
-                self.cur_body
-                    .get_mut_block(self.cur_block)
+                self.cur_block
+                    .as_ref()
+                    .unwrap()
+                    .borrow_mut()
                     .insert_identifier(identifier_id, instruction_id);
 
                 Ok(())
@@ -297,6 +324,10 @@ impl<'a, 'b> Parser<'a, 'b> {
 
 #[cfg(test)]
 mod tests {
+    use std::collections::HashMap;
+
+    use crate::ir::ssa::{Instruction, Operator};
+
     use super::*;
 
     #[test]
@@ -305,6 +336,29 @@ mod tests {
         let mut parser = Parser::new(tokens);
         parser.computation().unwrap();
 
-        panic!("{:#?}", parser.store);
+        let const_block = Rc::new(RefCell::new(BasicBlock::from(
+            vec![Instruction::new(1, Operator::Const(1), None)],
+            HashMap::new(),
+            ControlFlowEdge::Leaf,
+            None,
+        )));
+        let main_block = Rc::new(RefCell::new(BasicBlock::from(
+            Vec::new(),
+            HashMap::from([(14, 1)]),
+            ControlFlowEdge::Leaf,
+            Some(Rc::downgrade(&const_block)),
+        )));
+
+        const_block
+            .borrow_mut()
+            .update_edge(ControlFlowEdge::Fallthrough(Rc::clone(&main_block)));
+
+        let main_body = Body::from(const_block);
+        let expected_ir = IrStore::from(HashMap::from([("main".to_string(), main_body)]));
+
+        let str1 = format!("{:?}", parser.store);
+        let str2 = format!("{:?}", expected_ir);
+
+        assert_eq!(str1, str2);
     }
 }
