@@ -27,6 +27,16 @@ impl<'a> Body<'a> {
     }
 }
 
+impl<'a> PartialEq for Body<'a> {
+    fn eq(&self, other: &Self) -> bool {
+        match (&self.root, &other.root) {
+            (Some(a), Some(b)) => *a.borrow() == *b.borrow(),
+            (None, None) => true,
+            _ => false,
+        }
+    }
+}
+
 #[derive(Debug)]
 pub struct BasicBlock<'a> {
     body: Vec<Instruction<'a>>,
@@ -76,6 +86,15 @@ impl<'a> BasicBlock<'a> {
     }
 }
 
+impl<'a> PartialEq for BasicBlock<'a> {
+    fn eq(&self, other: &Self) -> bool {
+        self.body == other.body
+            && self.identifier_map == other.identifier_map
+            && self.edge == other.edge
+        // @TODO: Check dominator
+    }
+}
+
 #[derive(Debug, Clone)]
 pub enum ControlFlowEdge<'a> {
     Leaf,
@@ -87,4 +106,26 @@ pub enum ControlFlowEdge<'a> {
         Rc<RefCell<BasicBlock<'a>>>,
     ),
     Loop(Rc<RefCell<BasicBlock<'a>>>, Rc<RefCell<BasicBlock<'a>>>),
+}
+
+impl<'a> PartialEq for ControlFlowEdge<'a> {
+    fn eq(&self, other: &Self) -> bool {
+        match (self, other) {
+            (ControlFlowEdge::Leaf, ControlFlowEdge::Leaf) => true,
+            (ControlFlowEdge::Fallthrough(a), ControlFlowEdge::Fallthrough(b)) => {
+                *a.borrow() == *b.borrow()
+            }
+            (ControlFlowEdge::IfStmt(a1, a2, a3), ControlFlowEdge::IfStmt(b1, b2, b3)) => {
+                *a1.borrow() == *b1.borrow()
+                    && a2.as_ref().map_or(b2.is_none(), |x| {
+                        b2.as_ref().map_or(false, |y| *x.borrow() == *y.borrow())
+                    })
+                    && *a3.borrow() == *b3.borrow()
+            }
+            (ControlFlowEdge::Loop(a1, a2), ControlFlowEdge::Loop(b1, b2)) => {
+                *a1.borrow() == *b1.borrow() && *a2.borrow() == *b2.borrow()
+            }
+            _ => false,
+        }
+    }
 }
