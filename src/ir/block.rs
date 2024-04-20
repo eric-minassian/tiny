@@ -79,6 +79,10 @@ impl<'a> BasicBlock<'a> {
         self.body.push(instruction);
     }
 
+    pub fn get_identifier(&mut self, identifier: &IdentifierId) -> Option<&InstructionId> {
+        self.identifier_map.get(identifier)
+    }
+
     pub fn insert_identifier(&mut self, identifier: IdentifierId, instruction: InstructionId) {
         self.identifier_map.insert(identifier, instruction);
     }
