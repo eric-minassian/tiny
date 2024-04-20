@@ -10,12 +10,6 @@ use crate::{
     lexer::{Token, Tokenizer},
 };
 
-macro_rules! todo_with_error {
-    () => {
-        eprintln!("Error: Functionality not implemented yet")
-    };
-}
-
 pub struct Parser<'a> {
     tokens: Peekable<Tokenizer<'a>>,
     instruction_counter: u32,
@@ -54,11 +48,11 @@ impl<'a> Parser<'a> {
         self.match_token(Token::Main, "Expected 'main' keyword")?;
 
         if let Some(Ok(Token::Var)) = self.tokens.peek() {
-            todo_with_error!()
+            todo!()
         }
 
         while let Some(Ok(Token::Call)) = self.tokens.peek() {
-            todo_with_error!()
+            todo!()
         }
 
         self.match_token(Token::LBrack, "Expected '{' symbol")?;
@@ -264,23 +258,20 @@ impl<'a> Parser<'a> {
         }
     }
 
-    fn relation(&mut self) -> Result<()> {
-        // let _ = self.expression()?;
+    fn relation(&mut self) -> Result<InstructionId> {
+        let instr_id = self.expression()?;
 
-        // match self
-        //     .tokens
-        //     .next()
-        //     .ok_or_else(|| Error::SyntaxError("Expected a relOp".to_string()))??
-        // {
-        //     Token::RelOp(_) => {
-        //         let _ = self.expression()?;
-
-        //         todo!()
-        //     }
-        //     _ => Err(Error::SyntaxError("Expected a relOp".to_string())),
-        // }
-
-        todo!()
+        match self
+            .tokens
+            .next()
+            .ok_or_else(|| Error::SyntaxError("Expected a relOp".to_string()))??
+        {
+            Token::RelOp(_) => {
+                let instr_id2 = self.expression()?;
+                Ok(self.handle_binary_op(StoredBinaryOpcode::Cmp, instr_id, instr_id2))
+            }
+            _ => Err(Error::SyntaxError("Expected a relOp".to_string())),
+        }
     }
 
     fn handle_binary_op(
@@ -291,15 +282,6 @@ impl<'a> Parser<'a> {
     ) -> InstructionId {
         let new_instr_id = self.instruction_counter;
 
-        // self.cur_block
-        //     .as_ref()
-        //     .unwrap()
-        //     .borrow_mut()
-        //     .insert_instruction(Instruction::new(
-        //         new_instr_id,
-        //         Operator::StoredBinaryOp(operator, instr_id, instr_id2),
-        //         None,
-        //     ));
         self.cur_body
             .as_mut()
             .unwrap()
@@ -367,7 +349,20 @@ impl<'a> Parser<'a> {
             .peek()
             .ok_or_else(|| Error::SyntaxError("Factor Error".to_string()))?
         {
-            Ok(Token::Identifier(id)) => todo!(),
+            Ok(Token::Identifier(id)) => {
+                let instruction_id = self
+                    .cur_body
+                    .as_mut()
+                    .unwrap()
+                    .get_mut_block(self.cur_block.unwrap())
+                    .unwrap()
+                    .get_identifier(id)
+                    .unwrap()
+                    .clone();
+                self.tokens.next();
+
+                Ok(instruction_id)
+            }
             Ok(Token::Number(num)) => {
                 if let Some(instruction_id) = self.const_body.get_instruction_id(*num) {
                     self.tokens.next();
@@ -383,7 +378,18 @@ impl<'a> Parser<'a> {
                     Ok(instruction_id)
                 }
             }
-            Ok(Token::LPar) => todo!(),
+            Ok(Token::LPar) => {
+                self.tokens.next();
+                let instr_id = self.expression()?;
+                match self.tokens.next() {
+                    Some(Ok(Token::RPar)) => Ok(instr_id),
+                    Some(Ok(token)) => Err(Error::SyntaxError(format!(
+                        "Expected ')', received {:?}",
+                        token
+                    ))),
+                    _ => Err(Error::SyntaxError("Expected ')'.".to_string())),
+                }
+            }
             Ok(_) => {
                 let _ = self.func_call();
                 todo!()
@@ -402,38 +408,15 @@ mod tests {
     use super::*;
 
     #[test]
-    fn assignment() {
-        let tokens = Tokenizer::new("main {let x <- 1}.");
-        let mut parser = Parser::new(tokens);
-        parser.computation().unwrap();
-
-        let const_block = BasicBlock::from(
-            vec![Instruction::new(1, Operator::Const(1), None)],
-            HashMap::new(),
-            ControlFlowEdge::Fallthrough(BasicBlockId(0)),
-            None,
-        );
-        let main_block = BasicBlock::from(
-            Vec::new(),
-            HashMap::from([(14, 1)]),
-            ControlFlowEdge::Leaf,
-            Some(BasicBlockId(1)),
-        );
-
-        let main_body = Body::from(BasicBlockId(1), vec![main_block, const_block]);
-        let expected_ir = IrStore::from(HashMap::from([("main".to_string(), main_body)]));
-
-        assert_eq!(parser.store, expected_ir);
-    }
-
-    #[test]
-    fn assignment_with_arithmetic() {
+    fn sanity_check() {
         let tokens = Tokenizer::new(
             "
         main {
             let x <- 1;
             let z <- 1 + 2 + 2 - 4;
             let y <- 3 * 2 / 1;
+            let d <- z + y;
+            let d <- (1 + d);
         }.",
         );
         let mut parser = Parser::new(tokens);
@@ -477,8 +460,18 @@ mod tests {
                     Operator::StoredBinaryOp(StoredBinaryOpcode::Div, 8, 1),
                     None,
                 ),
+                Instruction::new(
+                    10,
+                    Operator::StoredBinaryOp(StoredBinaryOpcode::Add, 6, 9),
+                    None,
+                ),
+                Instruction::new(
+                    11,
+                    Operator::StoredBinaryOp(StoredBinaryOpcode::Add, 1, 10),
+                    None,
+                ),
             ],
-            HashMap::from([(15, 6), (14, 1), (16, 9)]),
+            HashMap::from([(14, 1), (15, 6), (16, 9), (17, 11)]),
             ControlFlowEdge::Leaf,
             Some(BasicBlockId(1)),
         );
