@@ -29,6 +29,10 @@ impl<'a> IrStore<'a> {
     pub fn insert(&mut self, name: String, body: Body<'a>) {
         self.bodies.insert(name, body);
     }
+
+    pub fn get_mut_body(&mut self, name: &str) -> Option<&mut Body<'a>> {
+        self.bodies.get_mut(name)
+    }
 }
 
 pub type InstructionId = u32;
