@@ -75,6 +75,14 @@ impl<'a> BasicBlock<'a> {
         }
     }
 
+    pub fn update_instructions(&mut self, instructions: Vec<Instruction<'a>>) {
+        self.instructions = instructions;
+    }
+
+    pub fn update_identifier_map(&mut self, identifier_map: HashMap<IdentifierId, InstructionId>) {
+        self.identifier_map = identifier_map
+    }
+
     pub fn insert_instruction(&mut self, instruction: Instruction<'a>) {
         self.instructions.push(instruction);
     }
@@ -93,6 +101,10 @@ impl<'a> BasicBlock<'a> {
 
     pub fn update_edge(&mut self, edge: ControlFlowEdge) {
         self.edge = edge;
+    }
+
+    pub fn get_identifier_map_copy(&self) -> HashMap<IdentifierId, InstructionId> {
+        self.identifier_map.clone()
     }
 }
 
