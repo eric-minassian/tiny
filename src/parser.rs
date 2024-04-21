@@ -227,7 +227,7 @@ impl<'a> Parser<'a> {
         }
         // @TODO: Fix if a new variable is assigned a value
 
-        let mut block = self
+        let block = self
             .cur_body
             .as_mut()
             .unwrap()
@@ -282,23 +282,6 @@ impl<'a> Parser<'a> {
 
         let then_block_end_id = self.cur_block.unwrap();
 
-        // if *self
-        //     .tokens
-        //     .peek()
-        //     .ok_or_else(|| Error::SyntaxError("Expected 'fi' keyword".into()))?
-        //     == Ok(Token::Else)
-        // {
-        if !(*self
-            .tokens
-            .peek()
-            .ok_or_else(|| Error::SyntaxError("Expected 'fi' keyword".into()))?
-            == Ok(Token::Else))
-        {
-            return Err(Error::SyntaxError("Temp".to_string()));
-        }
-
-        self.tokens.next();
-
         self.cur_body
             .as_mut()
             .unwrap()
@@ -310,22 +293,33 @@ impl<'a> Parser<'a> {
                 None,
             ));
 
-        let else_block_id = self
-            .cur_body
-            .as_mut()
-            .unwrap()
-            .insert_block(BasicBlock::from(
-                Vec::new(),
-                branch_block_identifier_map,
-                ControlFlowEdge::Leaf,
-                Some(branch_block_id),
-            ));
-        self.cur_block = Some(else_block_id);
+        let mut is_else = false;
 
-        self.stat_sequence()?;
+        if *self
+            .tokens
+            .peek()
+            .ok_or_else(|| Error::SyntaxError("Expected 'fi' keyword".into()))?
+            == Ok(Token::Else)
+        {
+            self.tokens.next();
+            is_else = true;
+
+            let else_block_id = self
+                .cur_body
+                .as_mut()
+                .unwrap()
+                .insert_block(BasicBlock::from(
+                    Vec::new(),
+                    branch_block_identifier_map,
+                    ControlFlowEdge::Leaf,
+                    Some(branch_block_id),
+                ));
+            self.cur_block = Some(else_block_id);
+
+            self.stat_sequence()?;
+        }
 
         let else_block_end_id = self.cur_block.unwrap();
-        // }
 
         self.match_token(Token::Fi, "expected 'fi' keyword".into())?;
 
@@ -347,18 +341,24 @@ impl<'a> Parser<'a> {
             .as_mut()
             .unwrap()
             .update_edge(ControlFlowEdge::Branch(join_block_id));
-        self.cur_body
-            .as_mut()
-            .unwrap()
-            .get_mut_block(else_block_end_id)
-            .as_mut()
-            .unwrap()
-            .update_edge(ControlFlowEdge::Fallthrough(join_block_id));
+
+        if is_else {
+            self.cur_body
+                .as_mut()
+                .unwrap()
+                .get_mut_block(else_block_end_id)
+                .as_mut()
+                .unwrap()
+                .update_edge(ControlFlowEdge::Fallthrough(join_block_id));
+        }
 
         self.cur_block = Some(join_block_id);
 
-        self.get_and_set_phi(then_block_end_id, else_block_end_id);
-
+        if is_else {
+            self.get_and_set_phi(then_block_end_id, else_block_end_id);
+        } else {
+            self.get_and_set_phi(then_block_end_id, branch_block_id);
+        }
         Ok(())
     }
 
@@ -633,6 +633,71 @@ mod tests {
         let main_body = Body::from(
             BasicBlockId(4),
             vec![main_block, then_block, else_block, join_block, const_block],
+        );
+        let expected_ir = IrStore::from(HashMap::from([("main".to_string(), main_body)]));
+
+        assert_eq!(parser.store, expected_ir);
+    }
+
+    #[test]
+    fn branch_without_else() {
+        let tokens = Tokenizer::new(
+            "
+        main {
+            let x <- 1;
+            if x < 1 then
+                let x <- 2;
+            fi;
+        }.",
+        );
+        let mut parser = Parser::new(tokens);
+        parser.computation().unwrap();
+
+        // 3
+        let const_block = BasicBlock::from(
+            vec![
+                Instruction::new(1, Operator::Const(1), None),
+                Instruction::new(4, Operator::Const(2), None),
+            ],
+            HashMap::new(),
+            ControlFlowEdge::Fallthrough(BasicBlockId(0)),
+            None,
+        );
+
+        //0
+        let main_block = BasicBlock::from(
+            vec![
+                Instruction::new(
+                    2,
+                    Operator::StoredBinaryOp(StoredBinaryOpcode::Cmp, 1, 1),
+                    None,
+                ),
+                Instruction::new(3, Operator::Bge(5, 2), None),
+            ],
+            HashMap::from([(14, 1)]),
+            ControlFlowEdge::Fallthrough(BasicBlockId(1)),
+            Some(BasicBlockId(3)),
+        );
+
+        // 1
+        let then_block = BasicBlock::from(
+            Vec::new(),
+            HashMap::from([(14, 4)]),
+            ControlFlowEdge::Branch(BasicBlockId(2)),
+            Some(BasicBlockId(0)),
+        );
+
+        // 2
+        let join_block = BasicBlock::from(
+            vec![Instruction::new(5, Operator::Phi(4, 1), None)],
+            HashMap::from([(14, 5)]),
+            ControlFlowEdge::Leaf,
+            Some(BasicBlockId(0)),
+        );
+
+        let main_body = Body::from(
+            BasicBlockId(3),
+            vec![main_block, then_block, join_block, const_block],
         );
         let expected_ir = IrStore::from(HashMap::from([("main".to_string(), main_body)]));
 
