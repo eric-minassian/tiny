@@ -44,6 +44,15 @@ impl<'a> Parser<'a> {
         Ok(())
     }
 
+    fn push_instruction(&mut self, instruction: Instruction<'a>) {
+        self.cur_body
+            .as_mut()
+            .unwrap()
+            .get_mut_block(self.cur_block.unwrap())
+            .unwrap()
+            .insert_instruction(instruction);
+    }
+
     fn computation(&mut self) -> Result<()> {
         self.match_token(Token::Main, "Expected 'main' keyword")?;
 
@@ -177,13 +186,33 @@ impl<'a> Parser<'a> {
     }
 
     fn if_statement(&mut self) -> Result<()> {
-        // self.match_token(Token::If, "Expected 'if' keyword")?;
+        self.match_token(Token::If, "Expected 'if' keyword")?;
 
-        // let _ = self.relation()?;
+        let cmp_instr_id = self.relation()?;
 
-        // self.match_token(Token::Then, "Expected 'then' keyword")?;
+        self.match_token(Token::Then, "Expected 'then' keyword")?;
 
-        // let _ = self.stat_sequence()?;
+        // Add Branch Instruction
+        let branch_block_id = self.cur_block.unwrap();
+        let branch_instr_id = self.instruction_counter;
+        self.push_instruction(Instruction::new(
+            branch_instr_id,
+            Operator::Bge(0, cmp_instr_id),
+            None,
+        ));
+        self.instruction_counter += 1;
+
+        // Create new then block
+        let then_block_id = self
+            .cur_body
+            .as_mut()
+            .unwrap()
+            .insert_block(BasicBlock::new(Vec::new(), ControlFlowEdge::Leaf));
+        self.cur_block = Some(then_block_id);
+
+        self.stat_sequence()?;
+
+        let then_block_end_id = self.cur_block.unwrap();
 
         // if *self
         //     .tokens
@@ -191,14 +220,58 @@ impl<'a> Parser<'a> {
         //     .ok_or_else(|| Error::SyntaxError("Expected 'fi' keyword".into()))?
         //     == Ok(Token::Else)
         // {
-        //     self.tokens.next();
-        //     let _ = self.stat_sequence();
+        if !(*self
+            .tokens
+            .peek()
+            .ok_or_else(|| Error::SyntaxError("Expected 'fi' keyword".into()))?
+            == Ok(Token::Else))
+        {
+            return Err(Error::SyntaxError("Temp".to_string()));
+        }
+
+        self.tokens.next();
+
+        self.push_instruction(Instruction::new(
+            branch_instr_id,
+            Operator::Bge(self.instruction_counter, cmp_instr_id),
+            None,
+        ));
+        let else_block_id = self
+            .cur_body
+            .as_mut()
+            .unwrap()
+            .insert_block(BasicBlock::new(Vec::new(), ControlFlowEdge::Leaf));
+        self.cur_block = Some(else_block_id);
+
+        self.stat_sequence()?;
+
+        let else_block_end_id = self.cur_block.unwrap();
         // }
 
-        // self.match_token(Token::Fi, "expected 'fi' keyword".into())?;
+        self.match_token(Token::Fi, "expected 'fi' keyword".into())?;
 
-        // Ok(())
-        todo!()
+        let join_block_id = self
+            .cur_body
+            .as_mut()
+            .unwrap()
+            .insert_block(BasicBlock::new(Vec::new(), ControlFlowEdge::Leaf));
+
+        self.cur_body
+            .as_mut()
+            .unwrap()
+            .get_mut_block(then_block_end_id)
+            .as_mut()
+            .unwrap()
+            .update_edge(ControlFlowEdge::Branch(join_block_id));
+        self.cur_body
+            .as_mut()
+            .unwrap()
+            .get_mut_block(else_block_end_id)
+            .as_mut()
+            .unwrap()
+            .update_edge(ControlFlowEdge::Branch(join_block_id));
+
+        Ok(())
     }
 
     fn func_call(&mut self) -> Result<()> {
@@ -282,16 +355,11 @@ impl<'a> Parser<'a> {
     ) -> InstructionId {
         let new_instr_id = self.instruction_counter;
 
-        self.cur_body
-            .as_mut()
-            .unwrap()
-            .get_mut_block(self.cur_block.unwrap())
-            .unwrap()
-            .insert_instruction(Instruction::new(
-                new_instr_id,
-                Operator::StoredBinaryOp(operator, instr_id, instr_id2),
-                None,
-            ));
+        self.push_instruction(Instruction::new(
+            new_instr_id,
+            Operator::StoredBinaryOp(operator, instr_id, instr_id2),
+            None,
+        ));
 
         self.instruction_counter += 1;
 
@@ -406,6 +474,79 @@ mod tests {
     use crate::ir::ssa::{Instruction, Operator};
 
     use super::*;
+
+    #[test]
+    fn branch() {
+        let tokens = Tokenizer::new(
+            "
+        main {
+            let x <- 1;
+            if x < 1 then
+                let a <- 2;
+            else
+                let a <- 4;
+            fi;
+        }.",
+        );
+        let mut parser = Parser::new(tokens);
+        parser.computation().unwrap();
+
+        // 4
+        let const_block = BasicBlock::from(
+            vec![
+                Instruction::new(1, Operator::Const(1), None),
+                Instruction::new(4, Operator::Const(2), None),
+                Instruction::new(5, Operator::Const(4), None),
+            ],
+            HashMap::new(),
+            ControlFlowEdge::Fallthrough(BasicBlockId(0)),
+            None,
+        );
+
+        //0
+        let main_block = BasicBlock::from(
+            vec![Instruction::new(
+                2,
+                Operator::StoredBinaryOp(StoredBinaryOpcode::Cmp, 1, 1),
+                None,
+            )],
+            HashMap::from([(14, 1)]),
+            ControlFlowEdge::Fallthrough(BasicBlockId(1)),
+            Some(BasicBlockId(4)),
+        );
+
+        // 1
+        let then_block = BasicBlock::from(
+            Vec::new(),
+            HashMap::from([(14, 1), (15, 4)]),
+            ControlFlowEdge::Branch(BasicBlockId(3)),
+            Some(BasicBlockId(0)),
+        );
+
+        // 2
+        let else_block = BasicBlock::from(
+            Vec::new(),
+            HashMap::from([(14, 1), (15, 5)]),
+            ControlFlowEdge::Fallthrough(BasicBlockId(3)),
+            Some(BasicBlockId(0)),
+        );
+
+        // 3
+        let join_block = BasicBlock::from(
+            vec![Instruction::new(6, Operator::Phi(4, 5), None)],
+            HashMap::from([(14, 1), (15, 6)]),
+            ControlFlowEdge::Leaf,
+            Some(BasicBlockId(0)),
+        );
+
+        let main_body = Body::from(
+            BasicBlockId(4),
+            vec![main_block, then_block, else_block, join_block, const_block],
+        );
+        let expected_ir = IrStore::from(HashMap::from([("main".to_string(), main_body)]));
+
+        assert_eq!(parser.store, expected_ir);
+    }
 
     #[test]
     fn sanity_check() {

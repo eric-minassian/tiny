@@ -45,16 +45,16 @@ impl<'a> Body<'a> {
 
 #[derive(Debug, PartialEq)]
 pub struct BasicBlock<'a> {
-    body: Vec<Instruction<'a>>,
+    instructions: Vec<Instruction<'a>>,
     identifier_map: HashMap<IdentifierId, InstructionId>,
     edge: ControlFlowEdge,
     dominator: Option<BasicBlockId>,
 }
 
 impl<'a> BasicBlock<'a> {
-    pub fn new(body: Vec<Instruction<'a>>, edge: ControlFlowEdge) -> Self {
+    pub fn new(instructions: Vec<Instruction<'a>>, edge: ControlFlowEdge) -> Self {
         Self {
-            body,
+            instructions,
             identifier_map: HashMap::new(),
             edge,
             dominator: None,
@@ -62,13 +62,13 @@ impl<'a> BasicBlock<'a> {
     }
 
     pub fn from(
-        body: Vec<Instruction<'a>>,
+        instructions: Vec<Instruction<'a>>,
         identifier_map: HashMap<IdentifierId, InstructionId>,
         edge: ControlFlowEdge,
         dominator: Option<BasicBlockId>,
     ) -> Self {
         Self {
-            body,
+            instructions,
             dominator,
             edge,
             identifier_map,
@@ -76,7 +76,7 @@ impl<'a> BasicBlock<'a> {
     }
 
     pub fn insert_instruction(&mut self, instruction: Instruction<'a>) {
-        self.body.push(instruction);
+        self.instructions.push(instruction);
     }
 
     pub fn get_identifier(&mut self, identifier: &IdentifierId) -> Option<&InstructionId> {
