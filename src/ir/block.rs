@@ -7,7 +7,7 @@ use super::{ssa::Instruction, InstructionId};
 #[derive(Debug, PartialEq, Clone, Copy)]
 pub struct BasicBlockId(pub usize);
 
-#[derive(Debug, PartialEq)]
+#[derive(Debug, PartialEq, Clone)]
 pub struct Body<'a> {
     root: Option<BasicBlockId>,
     blocks: Vec<BasicBlock<'a>>,
@@ -38,12 +38,12 @@ impl<'a> Body<'a> {
         self.root = Some(root);
     }
 
-    pub fn get_mut_block(&mut self, id: BasicBlockId) -> Option<&mut BasicBlock<'a>> {
+    pub fn mut_block(&mut self, id: BasicBlockId) -> Option<&mut BasicBlock<'a>> {
         self.blocks.get_mut(id.0)
     }
 }
 
-#[derive(Debug, PartialEq)]
+#[derive(Debug, PartialEq, Clone)]
 pub struct BasicBlock<'a> {
     instructions: Vec<Instruction<'a>>,
     identifier_map: HashMap<IdentifierId, InstructionId>,

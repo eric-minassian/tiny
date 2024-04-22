@@ -1,4 +1,5 @@
 pub mod block;
+pub mod gen;
 pub mod ssa;
 
 use std::collections::HashMap;
@@ -7,23 +8,36 @@ use crate::lexer::IdentifierId;
 
 use self::{
     block::Body,
-    ssa::{Instruction, Operator},
+    ssa::{Instruction, InstructionId, Operator},
 };
 
 #[derive(Debug, PartialEq)]
 pub struct IrStore<'a> {
     bodies: HashMap<String, Body<'a>>,
+    instr_count: u32,
 }
 
 impl<'a> IrStore<'a> {
     pub fn new() -> Self {
         Self {
             bodies: HashMap::new(),
+            instr_count: 0,
         }
     }
 
-    pub fn from(bodies: HashMap<String, Body<'a>>) -> Self {
-        Self { bodies }
+    pub fn from(bodies: HashMap<String, Body<'a>>, instr_count: u32) -> Self {
+        Self {
+            bodies,
+            instr_count,
+        }
+    }
+
+    pub fn get_instr_count(&self) -> u32 {
+        self.instr_count
+    }
+
+    pub fn increment_instr_count(&mut self) {
+        self.instr_count += 1;
     }
 
     pub fn insert(&mut self, name: String, body: Body<'a>) {
@@ -34,8 +48,6 @@ impl<'a> IrStore<'a> {
         self.bodies.get_mut(name)
     }
 }
-
-pub type InstructionId = u32;
 
 #[derive(Debug, PartialEq, Clone)]
 pub struct ConstBody<'a> {
