@@ -52,6 +52,7 @@ pub enum Operator {
     Const(u32),
     StoredBinaryOp(StoredBinaryOpcode, InstructionId, InstructionId),
     End,
+    Phi(InstructionId, InstructionId),
     Bra(InstructionId),
     Bne(InstructionId, InstructionId),
     Beq(InstructionId, InstructionId),

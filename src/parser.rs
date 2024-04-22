@@ -1,4 +1,4 @@
-use std::iter::Peekable;
+use std::{collections::HashMap, iter::Peekable};
 
 use crate::{
     error::{Error, Result},
@@ -44,6 +44,15 @@ impl<'a> Parser<'a> {
         Ok(())
     }
 
+    fn push_instruction(&mut self, instruction: Instruction<'a>) {
+        self.cur_body
+            .as_mut()
+            .unwrap()
+            .get_mut_block(self.cur_block.unwrap())
+            .unwrap()
+            .insert_instruction(instruction);
+    }
+
     fn computation(&mut self) -> Result<()> {
         self.match_token(Token::Main, "Expected 'main' keyword")?;
 
@@ -57,7 +66,40 @@ impl<'a> Parser<'a> {
 
         self.match_token(Token::LBrack, "Expected '{' symbol")?;
 
+        let mut cur_body = Body::new();
+        let cur_block = BasicBlock::new(Vec::new(), ControlFlowEdge::Leaf);
+
+        let cur_block = cur_body.insert_block(cur_block);
+
+        cur_body.update_root(cur_block);
+
+        self.cur_body = Some(cur_body);
+        self.cur_block = Some(cur_block);
+
         self.stat_sequence()?;
+
+        // Create Const Block
+        let const_block = BasicBlock::new(
+            self.const_body.get_instructions().clone(),
+            ControlFlowEdge::Fallthrough(cur_block),
+        );
+        let const_block_id = self.cur_body.as_mut().unwrap().insert_block(const_block);
+
+        // Update Dominator
+        self.cur_body
+            .as_mut()
+            .unwrap()
+            .get_mut_block(cur_block)
+            .unwrap()
+            .update_dominator(const_block_id);
+
+        self.cur_body.as_mut().unwrap().update_root(const_block_id);
+
+        self.store
+            .insert("main".to_string(), self.cur_body.take().unwrap());
+
+        self.cur_block = None;
+        self.cur_body = None;
 
         self.match_token(Token::RBrack, "Expected '}' symbol")?;
         self.match_token(Token::Period, "Expected '.' symbol")?;
@@ -82,16 +124,6 @@ impl<'a> Parser<'a> {
     }
 
     fn stat_sequence(&mut self) -> Result<()> {
-        let mut cur_body = Body::new();
-        let cur_block = BasicBlock::new(Vec::new(), ControlFlowEdge::Leaf);
-
-        let cur_block = cur_body.insert_block(cur_block);
-
-        cur_body.update_root(cur_block);
-
-        self.cur_body = Some(cur_body);
-        self.cur_block = Some(cur_block);
-
         self.statement()?;
 
         while let Some(token) = self.tokens.peek() {
@@ -108,29 +140,6 @@ impl<'a> Parser<'a> {
                 _ => break,
             }
         }
-
-        // Create Const Block
-        let const_block = BasicBlock::new(
-            self.const_body.get_instructions().clone(),
-            ControlFlowEdge::Fallthrough(self.cur_block.unwrap()),
-        );
-        let const_block_id = self.cur_body.as_mut().unwrap().insert_block(const_block);
-
-        // Update Dominator
-        self.cur_body
-            .as_mut()
-            .unwrap()
-            .get_mut_block(self.cur_block.unwrap())
-            .unwrap()
-            .update_dominator(const_block_id);
-
-        self.cur_body.as_mut().unwrap().update_root(const_block_id);
-
-        self.store
-            .insert("main".to_string(), self.cur_body.take().unwrap());
-
-        self.cur_block = None;
-        self.cur_body = None;
 
         Ok(())
     }
@@ -176,29 +185,181 @@ impl<'a> Parser<'a> {
         todo!()
     }
 
+    fn get_and_set_phi(&mut self, left_block_id: BasicBlockId, right_block_id: BasicBlockId) {
+        let left_identifier_map = self
+            .cur_body
+            .as_mut()
+            .unwrap()
+            .get_mut_block(left_block_id)
+            .as_ref()
+            .unwrap()
+            .get_identifier_map_copy();
+
+        let right_identifier_map = self
+            .cur_body
+            .as_mut()
+            .unwrap()
+            .get_mut_block(right_block_id)
+            .as_ref()
+            .unwrap()
+            .get_identifier_map_copy();
+
+        let mut new_identifier_map = HashMap::new();
+        let mut new_instructions = Vec::new();
+
+        for (identifier_id, left_instr_id) in left_identifier_map.iter() {
+            if let Some(right_instr_id) = right_identifier_map.get(&identifier_id) {
+                if right_instr_id != left_instr_id {
+                    let new_instr_id = self.instruction_counter;
+                    self.instruction_counter += 1;
+
+                    new_instructions.push(Instruction::new(
+                        new_instr_id,
+                        Operator::Phi(*left_instr_id, *right_instr_id),
+                        None,
+                    ));
+
+                    new_identifier_map.insert(*identifier_id, new_instr_id);
+                } else {
+                    new_identifier_map.insert(*identifier_id, *left_instr_id);
+                }
+            }
+        }
+        // @TODO: Fix if a new variable is assigned a value
+
+        let block = self
+            .cur_body
+            .as_mut()
+            .unwrap()
+            .get_mut_block(self.cur_block.unwrap())
+            .unwrap();
+
+        block.update_identifier_map(new_identifier_map);
+        block.update_instructions(new_instructions);
+    }
+
     fn if_statement(&mut self) -> Result<()> {
-        // self.match_token(Token::If, "Expected 'if' keyword")?;
+        self.match_token(Token::If, "Expected 'if' keyword")?;
 
-        // let _ = self.relation()?;
+        let cmp_instr_id = self.relation()?;
 
-        // self.match_token(Token::Then, "Expected 'then' keyword")?;
+        self.match_token(Token::Then, "Expected 'then' keyword")?;
 
-        // let _ = self.stat_sequence()?;
+        // Add Branch Instruction
+        let branch_block_id = self.cur_block.unwrap();
+        let branch_instr_id = self.instruction_counter;
+        self.instruction_counter += 1;
+        let branch_block_identifier_map = self
+            .cur_body
+            .as_mut()
+            .unwrap()
+            .get_mut_block(branch_block_id)
+            .as_ref()
+            .unwrap()
+            .get_identifier_map_copy();
 
-        // if *self
-        //     .tokens
-        //     .peek()
-        //     .ok_or_else(|| Error::SyntaxError("Expected 'fi' keyword".into()))?
-        //     == Ok(Token::Else)
-        // {
-        //     self.tokens.next();
-        //     let _ = self.stat_sequence();
-        // }
+        // Create new then block
+        let then_block_id = self
+            .cur_body
+            .as_mut()
+            .unwrap()
+            .insert_block(BasicBlock::from(
+                Vec::new(),
+                branch_block_identifier_map.clone(),
+                ControlFlowEdge::Leaf,
+                Some(branch_block_id),
+            ));
+        self.cur_block = Some(then_block_id);
 
-        // self.match_token(Token::Fi, "expected 'fi' keyword".into())?;
+        self.cur_body
+            .as_mut()
+            .unwrap()
+            .get_mut_block(branch_block_id)
+            .unwrap()
+            .update_edge(ControlFlowEdge::Fallthrough(then_block_id));
 
-        // Ok(())
-        todo!()
+        self.stat_sequence()?;
+
+        let then_block_end_id = self.cur_block.unwrap();
+
+        self.cur_body
+            .as_mut()
+            .unwrap()
+            .get_mut_block(branch_block_id)
+            .unwrap()
+            .insert_instruction(Instruction::new(
+                branch_instr_id,
+                Operator::Bge(self.instruction_counter, cmp_instr_id),
+                None,
+            ));
+
+        let mut is_else = false;
+
+        if *self
+            .tokens
+            .peek()
+            .ok_or_else(|| Error::SyntaxError("Expected 'fi' keyword".into()))?
+            == Ok(Token::Else)
+        {
+            self.tokens.next();
+            is_else = true;
+
+            let else_block_id = self
+                .cur_body
+                .as_mut()
+                .unwrap()
+                .insert_block(BasicBlock::from(
+                    Vec::new(),
+                    branch_block_identifier_map,
+                    ControlFlowEdge::Leaf,
+                    Some(branch_block_id),
+                ));
+            self.cur_block = Some(else_block_id);
+
+            self.stat_sequence()?;
+        }
+
+        let else_block_end_id = self.cur_block.unwrap();
+
+        self.match_token(Token::Fi, "expected 'fi' keyword".into())?;
+
+        let join_block_id = self
+            .cur_body
+            .as_mut()
+            .unwrap()
+            .insert_block(BasicBlock::from(
+                Vec::new(),
+                HashMap::new(),
+                ControlFlowEdge::Leaf,
+                Some(branch_block_id),
+            ));
+
+        self.cur_body
+            .as_mut()
+            .unwrap()
+            .get_mut_block(then_block_end_id)
+            .as_mut()
+            .unwrap()
+            .update_edge(ControlFlowEdge::Branch(join_block_id));
+
+        if is_else {
+            self.cur_body
+                .as_mut()
+                .unwrap()
+                .get_mut_block(else_block_end_id)
+                .as_mut()
+                .unwrap()
+                .update_edge(ControlFlowEdge::Fallthrough(join_block_id));
+        }
+
+        self.cur_block = Some(join_block_id);
+
+        if is_else {
+            self.get_and_set_phi(then_block_end_id, else_block_end_id);
+        } else {
+            self.get_and_set_phi(then_block_end_id, branch_block_id);
+        }
+        Ok(())
     }
 
     fn func_call(&mut self) -> Result<()> {
@@ -282,16 +443,11 @@ impl<'a> Parser<'a> {
     ) -> InstructionId {
         let new_instr_id = self.instruction_counter;
 
-        self.cur_body
-            .as_mut()
-            .unwrap()
-            .get_mut_block(self.cur_block.unwrap())
-            .unwrap()
-            .insert_instruction(Instruction::new(
-                new_instr_id,
-                Operator::StoredBinaryOp(operator, instr_id, instr_id2),
-                None,
-            ));
+        self.push_instruction(Instruction::new(
+            new_instr_id,
+            Operator::StoredBinaryOp(operator, instr_id, instr_id2),
+            None,
+        ));
 
         self.instruction_counter += 1;
 
@@ -406,6 +562,147 @@ mod tests {
     use crate::ir::ssa::{Instruction, Operator};
 
     use super::*;
+
+    #[test]
+    fn branch() {
+        let tokens = Tokenizer::new(
+            "
+        main {
+            let x <- 1;
+            if x < 1 then
+                let a <- 2;
+            else
+                let a <- 4;
+            fi;
+        }.",
+        );
+        let mut parser = Parser::new(tokens);
+        parser.computation().unwrap();
+
+        // 4
+        let const_block = BasicBlock::from(
+            vec![
+                Instruction::new(1, Operator::Const(1), None),
+                Instruction::new(4, Operator::Const(2), None),
+                Instruction::new(5, Operator::Const(4), None),
+            ],
+            HashMap::new(),
+            ControlFlowEdge::Fallthrough(BasicBlockId(0)),
+            None,
+        );
+
+        //0
+        let main_block = BasicBlock::from(
+            vec![
+                Instruction::new(
+                    2,
+                    Operator::StoredBinaryOp(StoredBinaryOpcode::Cmp, 1, 1),
+                    None,
+                ),
+                Instruction::new(3, Operator::Bge(5, 2), None),
+            ],
+            HashMap::from([(14, 1)]),
+            ControlFlowEdge::Fallthrough(BasicBlockId(1)),
+            Some(BasicBlockId(4)),
+        );
+
+        // 1
+        let then_block = BasicBlock::from(
+            Vec::new(),
+            HashMap::from([(14, 1), (15, 4)]),
+            ControlFlowEdge::Branch(BasicBlockId(3)),
+            Some(BasicBlockId(0)),
+        );
+
+        // 2
+        let else_block = BasicBlock::from(
+            Vec::new(),
+            HashMap::from([(14, 1), (15, 5)]),
+            ControlFlowEdge::Fallthrough(BasicBlockId(3)),
+            Some(BasicBlockId(0)),
+        );
+
+        // 3
+        let join_block = BasicBlock::from(
+            vec![Instruction::new(6, Operator::Phi(4, 5), None)],
+            HashMap::from([(14, 1), (15, 6)]),
+            ControlFlowEdge::Leaf,
+            Some(BasicBlockId(0)),
+        );
+
+        let main_body = Body::from(
+            BasicBlockId(4),
+            vec![main_block, then_block, else_block, join_block, const_block],
+        );
+        let expected_ir = IrStore::from(HashMap::from([("main".to_string(), main_body)]));
+
+        assert_eq!(parser.store, expected_ir);
+    }
+
+    #[test]
+    fn branch_without_else() {
+        let tokens = Tokenizer::new(
+            "
+        main {
+            let x <- 1;
+            if x < 1 then
+                let x <- 2;
+            fi;
+        }.",
+        );
+        let mut parser = Parser::new(tokens);
+        parser.computation().unwrap();
+
+        // 3
+        let const_block = BasicBlock::from(
+            vec![
+                Instruction::new(1, Operator::Const(1), None),
+                Instruction::new(4, Operator::Const(2), None),
+            ],
+            HashMap::new(),
+            ControlFlowEdge::Fallthrough(BasicBlockId(0)),
+            None,
+        );
+
+        //0
+        let main_block = BasicBlock::from(
+            vec![
+                Instruction::new(
+                    2,
+                    Operator::StoredBinaryOp(StoredBinaryOpcode::Cmp, 1, 1),
+                    None,
+                ),
+                Instruction::new(3, Operator::Bge(5, 2), None),
+            ],
+            HashMap::from([(14, 1)]),
+            ControlFlowEdge::Fallthrough(BasicBlockId(1)),
+            Some(BasicBlockId(3)),
+        );
+
+        // 1
+        let then_block = BasicBlock::from(
+            Vec::new(),
+            HashMap::from([(14, 4)]),
+            ControlFlowEdge::Branch(BasicBlockId(2)),
+            Some(BasicBlockId(0)),
+        );
+
+        // 2
+        let join_block = BasicBlock::from(
+            vec![Instruction::new(5, Operator::Phi(4, 1), None)],
+            HashMap::from([(14, 5)]),
+            ControlFlowEdge::Leaf,
+            Some(BasicBlockId(0)),
+        );
+
+        let main_body = Body::from(
+            BasicBlockId(3),
+            vec![main_block, then_block, join_block, const_block],
+        );
+        let expected_ir = IrStore::from(HashMap::from([("main".to_string(), main_body)]));
+
+        assert_eq!(parser.store, expected_ir);
+    }
 
     #[test]
     fn sanity_check() {

@@ -45,16 +45,16 @@ impl<'a> Body<'a> {
 
 #[derive(Debug, PartialEq)]
 pub struct BasicBlock<'a> {
-    body: Vec<Instruction<'a>>,
+    instructions: Vec<Instruction<'a>>,
     identifier_map: HashMap<IdentifierId, InstructionId>,
     edge: ControlFlowEdge,
     dominator: Option<BasicBlockId>,
 }
 
 impl<'a> BasicBlock<'a> {
-    pub fn new(body: Vec<Instruction<'a>>, edge: ControlFlowEdge) -> Self {
+    pub fn new(instructions: Vec<Instruction<'a>>, edge: ControlFlowEdge) -> Self {
         Self {
-            body,
+            instructions,
             identifier_map: HashMap::new(),
             edge,
             dominator: None,
@@ -62,21 +62,29 @@ impl<'a> BasicBlock<'a> {
     }
 
     pub fn from(
-        body: Vec<Instruction<'a>>,
+        instructions: Vec<Instruction<'a>>,
         identifier_map: HashMap<IdentifierId, InstructionId>,
         edge: ControlFlowEdge,
         dominator: Option<BasicBlockId>,
     ) -> Self {
         Self {
-            body,
+            instructions,
             dominator,
             edge,
             identifier_map,
         }
     }
 
+    pub fn update_instructions(&mut self, instructions: Vec<Instruction<'a>>) {
+        self.instructions = instructions;
+    }
+
+    pub fn update_identifier_map(&mut self, identifier_map: HashMap<IdentifierId, InstructionId>) {
+        self.identifier_map = identifier_map
+    }
+
     pub fn insert_instruction(&mut self, instruction: Instruction<'a>) {
-        self.body.push(instruction);
+        self.instructions.push(instruction);
     }
 
     pub fn get_identifier(&mut self, identifier: &IdentifierId) -> Option<&InstructionId> {
@@ -93,6 +101,10 @@ impl<'a> BasicBlock<'a> {
 
     pub fn update_edge(&mut self, edge: ControlFlowEdge) {
         self.edge = edge;
+    }
+
+    pub fn get_identifier_map_copy(&self) -> HashMap<IdentifierId, InstructionId> {
+        self.identifier_map.clone()
     }
 }
 
