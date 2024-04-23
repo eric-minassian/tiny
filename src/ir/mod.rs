@@ -1,5 +1,4 @@
 pub mod block;
-pub mod gen;
 pub mod ssa;
 
 use std::collections::HashMap;

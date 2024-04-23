@@ -1,14 +1,17 @@
-use std::iter::Peekable;
+pub mod body;
+
+use std::{iter::Peekable, marker::PhantomData};
 
 use crate::{
     error::{Error, Result},
     ir::{
         block::{BasicBlock, BasicBlockId, Body, ControlFlowEdge},
-        gen::BodyParser,
         ConstBody, IrStore,
     },
     lexer::{Token, Tokenizer},
 };
+
+use self::body::BodyParser;
 
 pub struct Parser<'a> {
     tokens: Peekable<Tokenizer<'a>>,
@@ -51,7 +54,11 @@ impl<'a> Parser<'a> {
 
         self.match_token(Token::LBrack)?;
 
-        let mut main_body_parser =
+        let mut main_body = Body::new();
+        let cur_block = main_body.insert_block(BasicBlock::new(Vec::new(), ControlFlowEdge::Leaf));
+        main_body.update_root(cur_block);
+
+        let main_body_parser =
             BodyParser::new(&mut self.tokens, &mut self.store, &mut self.const_body);
         let mut main_body = main_body_parser.parse()?;
 

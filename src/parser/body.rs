@@ -2,14 +2,14 @@ use std::{collections::HashMap, iter::Peekable};
 
 use crate::{
     error::{Error, Result},
+    ir::{
+        block::{BasicBlock, BasicBlockId, Body, ControlFlowEdge},
+        ssa::{Instruction, InstructionId, Operator, StoredBinaryOpcode},
+    },
     lexer::{Token, Tokenizer},
 };
 
-use super::{
-    block::{BasicBlock, BasicBlockId, Body, ControlFlowEdge},
-    ssa::{Instruction, InstructionId, Operator, StoredBinaryOpcode},
-    ConstBody, IrStore,
-};
+use super::{ConstBody, IrStore};
 
 pub struct BodyParser<'a> {
     tokens: &'a mut Peekable<Tokenizer<'a>>,
@@ -51,10 +51,10 @@ impl<'a> BodyParser<'a> {
         Ok(())
     }
 
-    pub fn parse(&mut self) -> Result<Body<'a>> {
+    pub fn parse(mut self) -> Result<Body<'a>> {
         self.stat_sequence()?;
 
-        Ok(self.body.clone())
+        Ok(self.body)
     }
 
     fn stat_sequence(&mut self) -> Result<()> {

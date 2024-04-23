@@ -289,7 +289,7 @@ mod tests {
             assert_eq!(tokenizer.next(), Some(Ok(expected)));
         }
 
-        assert_eq!(tokenizer.next(), None);
+        assert_eq!(tokenizer.next(), None); 
     }
 
     #[test]
