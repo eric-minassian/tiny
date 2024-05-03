@@ -1,5 +1,9 @@
 use std::mem::discriminant;
 
+use crate::lexer::RelOp;
+
+use super::block::BasicBlockId;
+
 pub type InstructionId = i32;
 
 #[derive(Debug, PartialEq, Clone)]
@@ -48,18 +52,36 @@ pub enum StoredBinaryOpcode {
 }
 
 #[derive(Debug, PartialEq, Clone)]
+pub enum BranchOpcode {
+    Eq,
+    Ne,
+    Le,
+    Lt,
+    Ge,
+    Gt,
+}
+
+impl From<RelOp> for BranchOpcode {
+    fn from(op: RelOp) -> Self {
+        match op {
+            RelOp::Eq => Self::Eq,
+            RelOp::Ne => Self::Ne,
+            RelOp::Le => Self::Le,
+            RelOp::Lt => Self::Lt,
+            RelOp::Ge => Self::Ge,
+            RelOp::Gt => Self::Gt,
+        }
+    }
+}
+
+#[derive(Debug, PartialEq, Clone)]
 pub enum Operator {
     Const(u32),
+    Branch(BranchOpcode, BasicBlockId, InstructionId),
+    UnconditionalBranch(BasicBlockId),
     StoredBinaryOp(StoredBinaryOpcode, InstructionId, InstructionId),
     End,
     Phi(InstructionId, InstructionId),
-    Bra(InstructionId),
-    Bne(InstructionId, InstructionId),
-    Beq(InstructionId, InstructionId),
-    Ble(InstructionId, InstructionId),
-    Blt(InstructionId, InstructionId),
-    Bge(InstructionId, InstructionId),
-    Bgt(InstructionId, InstructionId),
     Read,
     Write(InstructionId),
     WriteNL,

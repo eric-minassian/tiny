@@ -1,5 +1,7 @@
 use std::collections::HashMap;
 
+use linked_hash_set::LinkedHashSet;
+
 use crate::lexer::IdentifierId;
 
 use super::{ssa::Instruction, InstructionId};
@@ -17,7 +19,7 @@ impl<'a> Body<'a> {
     pub fn new() -> Self {
         Self {
             root: 0,
-            blocks: vec![BasicBlock::clean_new()],
+            blocks: vec![BasicBlock::new()],
             instruction_count: 1,
         }
     }
@@ -59,24 +61,17 @@ pub struct BasicBlock<'a> {
     identifier_map: HashMap<IdentifierId, InstructionId>,
     edge: ControlFlowEdge,
     dominator: Option<BasicBlockId>,
+    modified_identifiers: LinkedHashSet<IdentifierId>,
 }
 
 impl<'a> BasicBlock<'a> {
-    pub fn clean_new() -> Self {
+    pub fn new() -> Self {
         Self {
             instructions: Vec::new(),
             identifier_map: HashMap::new(),
             edge: ControlFlowEdge::Leaf,
             dominator: None,
-        }
-    }
-
-    pub fn new(instructions: Vec<Instruction<'a>>, edge: ControlFlowEdge) -> Self {
-        Self {
-            instructions,
-            identifier_map: HashMap::new(),
-            edge,
-            dominator: None,
+            modified_identifiers: LinkedHashSet::new(),
         }
     }
 
@@ -85,12 +80,14 @@ impl<'a> BasicBlock<'a> {
         identifier_map: HashMap<IdentifierId, InstructionId>,
         edge: ControlFlowEdge,
         dominator: Option<BasicBlockId>,
+        modified_identifiers: LinkedHashSet<IdentifierId>,
     ) -> Self {
         Self {
             instructions,
             dominator,
             edge,
             identifier_map,
+            modified_identifiers,
         }
     }
 
@@ -100,6 +97,13 @@ impl<'a> BasicBlock<'a> {
 
     pub fn update_identifier_map(&mut self, identifier_map: HashMap<IdentifierId, InstructionId>) {
         self.identifier_map = identifier_map
+    }
+
+    pub fn update_modified_identifiers(
+        &mut self,
+        modified_identifiers: LinkedHashSet<IdentifierId>,
+    ) {
+        self.modified_identifiers = modified_identifiers;
     }
 
     pub fn insert_instruction(&mut self, instruction: Instruction<'a>) {
@@ -112,6 +116,7 @@ impl<'a> BasicBlock<'a> {
 
     pub fn insert_identifier(&mut self, identifier: IdentifierId, instruction: InstructionId) {
         self.identifier_map.insert(identifier, instruction);
+        self.modified_identifiers.insert(identifier);
     }
 
     pub fn update_dominator(&mut self, dom: BasicBlockId) {
@@ -124,6 +129,10 @@ impl<'a> BasicBlock<'a> {
 
     pub fn get_identifier_map_copy(&self) -> HashMap<IdentifierId, InstructionId> {
         self.identifier_map.clone()
+    }
+
+    pub fn get_modified_identifiers(&self) -> &LinkedHashSet<IdentifierId> {
+        &self.modified_identifiers
     }
 }
 

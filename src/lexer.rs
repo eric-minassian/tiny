@@ -39,6 +39,19 @@ pub enum RelOp {
     Gt, // >
     Ge, // >=
 }
+impl RelOp {
+    #[must_use]
+    pub fn opposite(&self) -> Self {
+        match self {
+            RelOp::Eq => RelOp::Ne,
+            RelOp::Ne => RelOp::Eq,
+            RelOp::Lt => RelOp::Ge,
+            RelOp::Le => RelOp::Gt,
+            RelOp::Gt => RelOp::Le,
+            RelOp::Ge => RelOp::Lt,
+        }
+    }
+}
 
 pub type Number = u32;
 pub type Identifier = usize;
