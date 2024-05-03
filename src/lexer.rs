@@ -254,6 +254,8 @@ impl Iterator for Tokenizer<'_> {
 mod tests {
     use super::*;
 
+    use pretty_assertions::assert_eq;
+
     #[test]
     fn test_reserved_words() {
         let input = "let call if then else fi while do od return var void function main";

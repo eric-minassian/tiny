@@ -17,3 +17,6 @@ unwrap_used = "deny"
 uninlined_format_args = { level = "allow", priority = 1 }
 
 [dependencies]
+
+[dev-dependencies]
+pretty_assertions = "1.4.0"

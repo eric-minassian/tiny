@@ -69,6 +69,8 @@ pub enum Operator {
 mod tests {
     use super::*;
 
+    use pretty_assertions::assert_eq;
+
     #[test]
     #[should_panic]
     fn ssa_different_operators() {

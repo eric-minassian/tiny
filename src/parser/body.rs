@@ -155,6 +155,8 @@ where
         }
         // @TODO: Fix if a new variable is assigned a value
 
+        println!("HERE: {:?}", new_identifier_map);
+
         let block = self.body.get_mut_block(self.cur_block).unwrap();
 
         block.update_identifier_map(new_identifier_map);
@@ -213,7 +215,7 @@ where
         if *self
             .tokens
             .peek()
-            .ok_or_else(|| Error::SyntaxError("Expected 'fi' keyword".into()))?
+            .ok_or_else(|| Error::UnexpectedEndOfFile)?
             == Ok(Token::Else)
         {
             self.tokens.next();
@@ -241,11 +243,19 @@ where
             Some(branch_block_id),
         ));
 
-        self.body
-            .get_mut_block(then_block_end_id)
-            .as_mut()
-            .unwrap()
-            .update_edge(ControlFlowEdge::Branch(join_block_id));
+        if is_else {
+            self.body
+                .get_mut_block(then_block_end_id)
+                .as_mut()
+                .unwrap()
+                .update_edge(ControlFlowEdge::Branch(join_block_id));
+        } else {
+            self.body
+                .get_mut_block(then_block_end_id)
+                .as_mut()
+                .unwrap()
+                .update_edge(ControlFlowEdge::Fallthrough(join_block_id));
+        }
 
         if is_else {
             self.body
@@ -447,9 +457,12 @@ where
 
 #[cfg(test)]
 mod tests {
+    use super::*;
+
+    use pretty_assertions::assert_eq;
     use std::collections::HashSet;
 
-    use super::*;
+    use crate::lexer::RelOp;
 
     #[test]
     fn simple_assignment() {
@@ -560,6 +573,144 @@ mod tests {
         let expected_body = Body::from(0, vec![main_block], 10);
 
         let expected_const_body = ConstBody::from(HashSet::from([0, 1, 2, 3, 4]));
+
+        assert_eq!(body, expected_body);
+        assert_eq!(const_body, expected_const_body);
+    }
+
+    #[test]
+    fn simple_if_statement() {
+        let tokens = [
+            Token::Let,
+            Token::Identifier(1),
+            Token::Assignment,
+            Token::Number(1),
+            Token::Semicolon,
+            Token::If,
+            Token::Identifier(1),
+            Token::RelOp(RelOp::Lt),
+            Token::Number(1),
+            Token::Then,
+            Token::Let,
+            Token::Identifier(2),
+            Token::Assignment,
+            Token::Number(2),
+            Token::Semicolon,
+            Token::Else,
+            Token::Let,
+            Token::Identifier(2),
+            Token::Assignment,
+            Token::Number(4),
+            Token::Semicolon,
+            Token::Fi,
+        ];
+
+        let mut const_body = ConstBody::new();
+
+        let body = BodyParser::new(
+            &mut tokens.map(|t| Ok(t)).into_iter().peekable(),
+            &mut const_body,
+        )
+        .parse();
+
+        let main_block = BasicBlock::from(
+            vec![
+                Instruction::new(
+                    1,
+                    Operator::StoredBinaryOp(StoredBinaryOpcode::Cmp, -1, -1),
+                    None,
+                ),
+                Instruction::new(2, Operator::Bge(3, 1), None),
+            ],
+            HashMap::from([(1, -1)]),
+            ControlFlowEdge::Fallthrough(1),
+            None,
+        );
+        let then_block = BasicBlock::from(
+            Vec::new(),
+            HashMap::from([(1, -1), (2, -2)]),
+            ControlFlowEdge::Branch(3),
+            Some(0),
+        );
+        let else_block = BasicBlock::from(
+            Vec::new(),
+            HashMap::from([(1, -1), (2, -4)]),
+            ControlFlowEdge::Fallthrough(3),
+            Some(0),
+        );
+        let join_block = BasicBlock::from(
+            vec![Instruction::new(3, Operator::Phi(-2, -4), None)],
+            HashMap::from([(1, -1), (2, 3)]),
+            ControlFlowEdge::Leaf,
+            Some(0),
+        );
+
+        let expected_body = Body::from(0, vec![main_block, then_block, else_block, join_block], 4);
+
+        let expected_const_body = ConstBody::from(HashSet::from([1, 2, 4]));
+
+        assert_eq!(body, expected_body);
+        assert_eq!(const_body, expected_const_body);
+    }
+
+    #[test]
+    fn simple_if_without_else_statement() {
+        let tokens = [
+            Token::Let,
+            Token::Identifier(1),
+            Token::Assignment,
+            Token::Number(1),
+            Token::Semicolon,
+            Token::If,
+            Token::Identifier(1),
+            Token::RelOp(RelOp::Lt),
+            Token::Number(1),
+            Token::Then,
+            Token::Let,
+            Token::Identifier(1),
+            Token::Assignment,
+            Token::Number(2),
+            Token::Semicolon,
+            Token::Fi,
+        ];
+
+        let mut const_body = ConstBody::new();
+
+        let body = BodyParser::new(
+            &mut tokens.map(|t| Ok(t)).into_iter().peekable(),
+            &mut const_body,
+        )
+        .parse();
+
+        let main_block = BasicBlock::from(
+            vec![
+                Instruction::new(
+                    1,
+                    Operator::StoredBinaryOp(StoredBinaryOpcode::Cmp, -1, -1),
+                    None,
+                ),
+                Instruction::new(2, Operator::Bge(3, 1), None),
+            ],
+            HashMap::from([(1, -1)]),
+            ControlFlowEdge::Fallthrough(1),
+            None,
+        );
+        let then_block = BasicBlock::from(
+            Vec::new(),
+            HashMap::from([(1, -2)]),
+            ControlFlowEdge::Fallthrough(2),
+            Some(0),
+        );
+        let join_block = BasicBlock::from(
+            vec![Instruction::new(3, Operator::Phi(-2, -1), None)],
+            HashMap::from([(1, 3)]),
+            ControlFlowEdge::Leaf,
+            Some(0),
+        );
+
+        let expected_body = Body::from(0, vec![main_block, then_block, join_block], 4);
+
+        let expected_const_body = ConstBody::from(HashSet::from([1, 2]));
 
         assert_eq!(body, expected_body);
         assert_eq!(const_body, expected_const_body);
