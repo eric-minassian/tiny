@@ -1,6 +1,6 @@
 use std::mem::discriminant;
 
-pub type InstructionId = u32;
+pub type InstructionId = i32;
 
 #[derive(Debug, PartialEq, Clone)]
 pub struct Instruction<'a> {

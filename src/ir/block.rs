@@ -4,42 +4,52 @@ use crate::lexer::IdentifierId;
 
 use super::{ssa::Instruction, InstructionId};
 
-#[derive(Debug, PartialEq, Clone, Copy)]
-pub struct BasicBlockId(pub usize);
+pub type BasicBlockId = usize;
 
 #[derive(Debug, PartialEq)]
 pub struct Body<'a> {
-    root: Option<BasicBlockId>,
+    root: BasicBlockId,
     blocks: Vec<BasicBlock<'a>>,
+    instruction_count: u32,
 }
 
 impl<'a> Body<'a> {
     pub fn new() -> Self {
         Self {
-            root: None,
-            blocks: Vec::new(),
+            root: 0,
+            blocks: vec![BasicBlock::clean_new()],
+            instruction_count: 1,
         }
     }
 
-    pub fn from(root: BasicBlockId, blocks: Vec<BasicBlock<'a>>) -> Self {
+    pub fn from(root: BasicBlockId, blocks: Vec<BasicBlock<'a>>, instruction_count: u32) -> Self {
         Self {
-            root: Some(root),
+            root,
             blocks,
+            instruction_count,
         }
+    }
+
+    pub fn get_root(&self) -> BasicBlockId {
+        self.root
+    }
+
+    pub fn get_instruction_count(&self) -> u32 {
+        self.instruction_count
+    }
+
+    pub fn increment_instruction_count(&mut self) {
+        self.instruction_count += 1;
     }
 
     pub fn insert_block(&mut self, block: BasicBlock<'a>) -> BasicBlockId {
-        let id = BasicBlockId(self.blocks.len());
+        let id = self.blocks.len();
         self.blocks.push(block);
         id
     }
 
-    pub fn update_root(&mut self, root: BasicBlockId) {
-        self.root = Some(root);
-    }
-
     pub fn get_mut_block(&mut self, id: BasicBlockId) -> Option<&mut BasicBlock<'a>> {
-        self.blocks.get_mut(id.0)
+        self.blocks.get_mut(id)
     }
 }
 
@@ -52,6 +62,15 @@ pub struct BasicBlock<'a> {
 }
 
 impl<'a> BasicBlock<'a> {
+    pub fn clean_new() -> Self {
+        Self {
+            instructions: Vec::new(),
+            identifier_map: HashMap::new(),
+            edge: ControlFlowEdge::Leaf,
+            dominator: None,
+        }
+    }
+
     pub fn new(instructions: Vec<Instruction<'a>>, edge: ControlFlowEdge) -> Self {
         Self {
             instructions,

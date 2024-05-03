@@ -40,10 +40,13 @@ pub enum RelOp {
     Ge, // >=
 }
 
+pub type Number = u32;
+pub type Identifier = usize;
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Token {
-    Number(u32),
-    Identifier(usize),
+    Number(Number),
+    Identifier(Identifier),
     RelOp(RelOp),
 
     Mul,        // *
