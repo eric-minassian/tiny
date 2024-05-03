@@ -1,6 +1,6 @@
 use std::mem::discriminant;
 
-pub type InstructionId = u32;
+pub type InstructionId = i32;
 
 #[derive(Debug, PartialEq, Clone)]
 pub struct Instruction<'a> {
@@ -68,6 +68,8 @@ pub enum Operator {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    use pretty_assertions::assert_eq;
 
     #[test]
     #[should_panic]

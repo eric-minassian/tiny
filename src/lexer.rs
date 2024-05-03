@@ -40,10 +40,13 @@ pub enum RelOp {
     Ge, // >=
 }
 
+pub type Number = u32;
+pub type Identifier = usize;
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Token {
-    Number(u32),
-    Identifier(usize),
+    Number(Number),
+    Identifier(Identifier),
     RelOp(RelOp),
 
     Mul,        // *
@@ -250,6 +253,8 @@ impl Iterator for Tokenizer<'_> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    use pretty_assertions::assert_eq;
 
     #[test]
     fn test_reserved_words() {
