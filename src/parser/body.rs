@@ -4,10 +4,10 @@ use crate::{
     error::{Error, Result},
     ir::{
         block::{BasicBlock, BasicBlockId, Body, ControlFlowEdge},
-        ssa::{Instruction, InstructionId, Operator, StoredBinaryOpcode},
+        ssa::{BranchOpcode, Instruction, InstructionId, Operator, StoredBinaryOpcode},
         ConstBody,
     },
-    lexer::Token,
+    lexer::{RelOp, Token},
 };
 
 use super::match_token;
@@ -166,7 +166,7 @@ where
     fn if_statement(&mut self) -> Result<()> {
         self.match_token(Token::If)?;
 
-        let cmp_instr_id = self.relation()?;
+        let (cmp_instr_id, opposite_relop) = self.relation()?;
 
         self.match_token(Token::Then)?;
 
@@ -199,17 +199,6 @@ where
 
         let then_block_end_id = self.cur_block;
 
-        let temp = self.body.get_instruction_count() as i32;
-
-        self.body
-            .get_mut_block(branch_block_id)
-            .unwrap()
-            .insert_instruction(Instruction::new(
-                branch_instr_id,
-                Operator::Bge(temp, cmp_instr_id),
-                None,
-            ));
-
         let mut is_else = false;
 
         if *self
@@ -230,6 +219,19 @@ where
             self.cur_block = else_block_id;
 
             self.stat_sequence()?;
+
+            self.body
+                .get_mut_block(branch_block_id)
+                .unwrap()
+                .insert_instruction(Instruction::new(
+                    branch_instr_id,
+                    Operator::Branch(
+                        BranchOpcode::from(opposite_relop.clone()),
+                        else_block_id,
+                        cmp_instr_id,
+                    ),
+                    None,
+                ));
         }
 
         let else_block_end_id = self.cur_block;
@@ -242,6 +244,21 @@ where
             ControlFlowEdge::Leaf,
             Some(branch_block_id),
         ));
+
+        if !is_else {
+            self.body
+                .get_mut_block(branch_block_id)
+                .unwrap()
+                .insert_instruction(Instruction::new(
+                    branch_instr_id,
+                    Operator::Branch(
+                        BranchOpcode::from(opposite_relop),
+                        join_block_id,
+                        cmp_instr_id,
+                    ),
+                    None,
+                ));
+        }
 
         if is_else {
             self.body
@@ -330,7 +347,7 @@ where
         }
     }
 
-    fn relation(&mut self) -> Result<InstructionId> {
+    fn relation(&mut self) -> Result<(InstructionId, RelOp)> {
         let instr_id = self.expression()?;
 
         match self
@@ -338,9 +355,12 @@ where
             .next()
             .ok_or_else(|| Error::SyntaxError("Expected a relOp".to_string()))??
         {
-            Token::RelOp(_) => {
+            Token::RelOp(relop) => {
                 let instr_id2 = self.expression()?;
-                Ok(self.handle_binary_op(StoredBinaryOpcode::Cmp, instr_id, instr_id2))
+                Ok((
+                    self.handle_binary_op(StoredBinaryOpcode::Cmp, instr_id, instr_id2),
+                    relop.opposite(),
+                ))
             }
             _ => Err(Error::SyntaxError("Expected a relOp".to_string())),
         }
@@ -620,7 +640,7 @@ mod tests {
                     Operator::StoredBinaryOp(StoredBinaryOpcode::Cmp, -1, -1),
                     None,
                 ),
-                Instruction::new(2, Operator::Bge(3, 1), None),
+                Instruction::new(2, Operator::Branch(BranchOpcode::Ge, 2, 1), None),
             ],
             HashMap::from([(1, -1)]),
             ControlFlowEdge::Fallthrough(1),
@@ -663,7 +683,7 @@ mod tests {
             Token::Semicolon,
             Token::If,
             Token::Identifier(1),
-            Token::RelOp(RelOp::Lt),
+            Token::RelOp(RelOp::Eq),
             Token::Number(1),
             Token::Then,
             Token::Let,
@@ -689,7 +709,7 @@ mod tests {
                     Operator::StoredBinaryOp(StoredBinaryOpcode::Cmp, -1, -1),
                     None,
                 ),
-                Instruction::new(2, Operator::Bge(3, 1), None),
+                Instruction::new(2, Operator::Branch(BranchOpcode::Ne, 2, 1), None),
             ],
             HashMap::from([(1, -1)]),
             ControlFlowEdge::Fallthrough(1),
