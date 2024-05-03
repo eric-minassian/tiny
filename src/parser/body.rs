@@ -1,5 +1,7 @@
 use std::{collections::HashMap, iter::Peekable};
 
+use linked_hash_set::LinkedHashSet;
+
 use crate::{
     error::{Error, Result},
     ir::{
@@ -80,7 +82,7 @@ where
         match self
             .tokens
             .peek()
-            .ok_or_else(|| Error::SyntaxError("Statement Error".into()))?
+            .ok_or_else(|| Error::UnexpectedEndOfFile)?
         {
             Ok(Token::Let) => self.assignment(),
             Ok(Token::Call) => self.func_call(),
@@ -118,40 +120,44 @@ where
     }
 
     fn get_and_set_phi(&mut self, left_block_id: BasicBlockId, right_block_id: BasicBlockId) {
-        let left_identifier_map = self
-            .body
-            .get_mut_block(left_block_id)
-            .as_ref()
-            .unwrap()
-            .get_identifier_map_copy();
+        let left_block = self.body.get_mut_block(left_block_id).unwrap();
+        let left_modified_identifiers = left_block.get_modified_identifiers().clone();
+        let left_identifier_map = left_block.get_identifier_map_copy();
 
-        let right_identifier_map = self
-            .body
-            .get_mut_block(right_block_id)
-            .as_ref()
-            .unwrap()
-            .get_identifier_map_copy();
+        let right_block = self.body.get_mut_block(right_block_id).unwrap();
+        let right_modified_identifiers = right_block.get_modified_identifiers().clone();
+        let right_identifier_map = right_block.get_identifier_map_copy();
 
-        let mut new_identifier_map = HashMap::new();
+        let mut new_identifier_map = HashMap::from(left_identifier_map.clone());
         let mut new_instructions = Vec::new();
+        let mut modified_identifiers = LinkedHashSet::new();
 
-        for (identifier_id, left_instr_id) in left_identifier_map.iter() {
-            if let Some(right_instr_id) = right_identifier_map.get(&identifier_id) {
-                if right_instr_id != left_instr_id {
-                    let new_instr_id = self.body.get_instruction_count() as i32;
-                    self.body.increment_instruction_count();
+        let dif = left_modified_identifiers
+            .union(&right_modified_identifiers)
+            .cloned();
 
-                    new_instructions.push(Instruction::new(
-                        new_instr_id as i32,
-                        Operator::Phi(*left_instr_id, *right_instr_id),
-                        None,
-                    ));
+        for identifier_id in dif {
+            let left_instr_id = left_identifier_map.get(&identifier_id);
+            let right_instr_id = right_identifier_map.get(&identifier_id);
 
-                    new_identifier_map.insert(*identifier_id, new_instr_id);
-                } else {
-                    new_identifier_map.insert(*identifier_id, *left_instr_id);
-                }
-            } else {
+            if left_instr_id.is_some() && right_instr_id.is_some() {
+                let left_instr_id = left_instr_id.unwrap();
+                let right_instr_id = right_instr_id.unwrap();
+
+                let new_instr_id = self.body.get_instruction_count() as i32;
+                self.body.increment_instruction_count();
+
+                new_instructions.push(Instruction::new(
+                    new_instr_id as i32,
+                    Operator::Phi(*left_instr_id, *right_instr_id),
+                    None,
+                ));
+
+                new_identifier_map.insert(identifier_id, new_instr_id);
+                modified_identifiers.insert(identifier_id);
+            } else if left_instr_id.is_some() {
+                let left_instr_id = left_instr_id.unwrap();
+
                 let new_instr_id = self.body.get_instruction_count() as i32;
                 self.body.increment_instruction_count();
 
@@ -163,29 +169,11 @@ where
                     None,
                 ));
 
-                new_identifier_map.insert(*identifier_id, new_instr_id);
-            }
-        }
+                new_identifier_map.insert(identifier_id, new_instr_id);
+                modified_identifiers.insert(identifier_id);
+            } else if right_instr_id.is_some() {
+                let right_instr_id = right_instr_id.unwrap();
 
-        for (identifier_id, right_instr_id) in right_identifier_map.iter() {
-            if let Some(left_instr_id) = left_identifier_map.get(&identifier_id) {
-                if !new_identifier_map.contains_key(identifier_id) {
-                    if right_instr_id != left_instr_id {
-                        let new_instr_id = self.body.get_instruction_count() as i32;
-                        self.body.increment_instruction_count();
-
-                        new_instructions.push(Instruction::new(
-                            new_instr_id as i32,
-                            Operator::Phi(*left_instr_id, *right_instr_id),
-                            None,
-                        ));
-
-                        new_identifier_map.insert(*identifier_id, new_instr_id);
-                    } else {
-                        new_identifier_map.insert(*identifier_id, *right_instr_id);
-                    }
-                }
-            } else {
                 let new_instr_id = self.body.get_instruction_count() as i32;
                 self.body.increment_instruction_count();
 
@@ -193,11 +181,12 @@ where
 
                 new_instructions.push(Instruction::new(
                     new_instr_id,
-                    Operator::Phi(*right_instr_id, missing_side),
+                    Operator::Phi(missing_side, *right_instr_id),
                     None,
                 ));
 
-                new_identifier_map.insert(*identifier_id, new_instr_id);
+                new_identifier_map.insert(identifier_id, new_instr_id);
+                modified_identifiers.insert(identifier_id);
             }
         }
 
@@ -205,6 +194,7 @@ where
 
         block.update_identifier_map(new_identifier_map);
         block.update_instructions(new_instructions);
+        block.update_modified_identifiers(modified_identifiers);
     }
 
     fn if_statement(&mut self) -> Result<()> {
@@ -231,6 +221,7 @@ where
             branch_block_identifier_map.clone(),
             ControlFlowEdge::Leaf,
             Some(branch_block_id),
+            LinkedHashSet::new(),
         ));
         self.cur_block = then_block_id;
 
@@ -259,6 +250,7 @@ where
                 branch_block_identifier_map,
                 ControlFlowEdge::Leaf,
                 Some(branch_block_id),
+                LinkedHashSet::new(),
             ));
             self.cur_block = else_block_id;
 
@@ -287,6 +279,7 @@ where
             HashMap::new(),
             ControlFlowEdge::Leaf,
             Some(branch_block_id),
+            LinkedHashSet::new(),
         ));
 
         if !is_else {
@@ -373,7 +366,7 @@ where
         match self
             .tokens
             .next()
-            .ok_or_else(|| Error::SyntaxError("Expected Another Token".to_string()))??
+            .ok_or_else(|| Error::UnexpectedEndOfFile)??
         {
             Token::Identifier(identifier_id) => {
                 self.match_token(Token::Assignment)?;
@@ -397,7 +390,7 @@ where
         match self
             .tokens
             .next()
-            .ok_or_else(|| Error::SyntaxError("Expected a relOp".to_string()))??
+            .ok_or_else(|| Error::UnexpectedEndOfFile)??
         {
             Token::RelOp(relop) => {
                 let instr_id2 = self.expression()?;
@@ -478,7 +471,7 @@ where
         match self
             .tokens
             .peek()
-            .ok_or_else(|| Error::SyntaxError("Factor Error".to_string()))?
+            .ok_or_else(|| Error::UnexpectedEndOfFile)?
         {
             Ok(Token::Identifier(id)) => {
                 let instruction_id = self
@@ -503,10 +496,10 @@ where
                 let instr_id = self.expression()?;
                 match self.tokens.next() {
                     Some(Ok(Token::RPar)) => Ok(instr_id),
-                    Some(Ok(token)) => Err(Error::SyntaxError(format!(
-                        "Expected ')', received {:?}",
-                        token
-                    ))),
+                    Some(Ok(token)) => Err(Error::UnexpectedToken {
+                        expected: Token::RPar,
+                        found: token,
+                    }),
                     _ => Err(Error::SyntaxError("Expected ')'.".to_string())),
                 }
             }
@@ -640,6 +633,7 @@ mod tests {
             HashMap::from([(1, -1), (2, 3), (3, 5), (4, 9)]),
             ControlFlowEdge::Leaf,
             None,
+            LinkedHashSet::from_iter([1, 2, 3, 4]),
         );
         let expected_body = Body::from(0, vec![main_block], 10);
 
@@ -710,18 +704,21 @@ mod tests {
             HashMap::from([(1, -1)]),
             ControlFlowEdge::Fallthrough(1),
             None,
+            LinkedHashSet::from_iter([1]),
         );
         let then_block = BasicBlock::from(
             Vec::new(),
             HashMap::from([(1, -1), (2, -2), (3, -13)]),
             ControlFlowEdge::Branch(3),
             Some(0),
+            LinkedHashSet::from_iter([2, 3]),
         );
         let else_block = BasicBlock::from(
             Vec::new(),
             HashMap::from([(1, -1), (2, -4)]),
             ControlFlowEdge::Fallthrough(3),
             Some(0),
+            LinkedHashSet::from_iter([2]),
         );
         let join_block = BasicBlock::from(
             vec![
@@ -731,6 +728,7 @@ mod tests {
             HashMap::from([(1, -1), (2, 3), (3, 4)]),
             ControlFlowEdge::Leaf,
             Some(0),
+            LinkedHashSet::from_iter([2, 3]),
         );
 
         let expected_body = Body::from(0, vec![main_block, then_block, else_block, join_block], 5);
@@ -788,18 +786,21 @@ mod tests {
             HashMap::from([(1, -1)]),
             ControlFlowEdge::Fallthrough(1),
             None,
+            LinkedHashSet::from_iter([1]),
         );
         let then_block = BasicBlock::from(
             Vec::new(),
             HashMap::from([(1, -2)]),
             ControlFlowEdge::Fallthrough(2),
             Some(0),
+            LinkedHashSet::from_iter([1]),
         );
         let join_block = BasicBlock::from(
             vec![Instruction::new(3, Operator::Phi(-2, -1), None)],
             HashMap::from([(1, 3)]),
             ControlFlowEdge::Leaf,
             Some(0),
+            LinkedHashSet::from_iter([1]),
         );
 
         let expected_body = Body::from(0, vec![main_block, then_block, join_block], 4);
@@ -819,6 +820,7 @@ mod tests {
                 let x = 3;
             else
                 let x = 4;
+                let y = 12;
             fi;
         else
             let x = 5;
@@ -851,6 +853,11 @@ mod tests {
             Token::Assignment,
             Token::Number(4),
             Token::Semicolon,
+            Token::Let,
+            Token::Identifier(2),
+            Token::Assignment,
+            Token::Number(12),
+            Token::Semicolon,
             Token::Fi,
             Token::Else,
             Token::Let,
@@ -881,6 +888,7 @@ mod tests {
             HashMap::from([(1, -1)]),
             ControlFlowEdge::Fallthrough(1),
             None,
+            LinkedHashSet::from_iter([1]),
         );
         let then_block = BasicBlock::from(
             vec![
@@ -894,36 +902,48 @@ mod tests {
             HashMap::from([(1, -1)]),
             ControlFlowEdge::Fallthrough(2),
             Some(0),
+            LinkedHashSet::new(),
         );
         let sub_then_block = BasicBlock::from(
             Vec::new(),
             HashMap::from([(1, -3)]),
             ControlFlowEdge::Branch(4),
             Some(1),
+            LinkedHashSet::from_iter([1]),
         );
         let sub_else_block = BasicBlock::from(
             Vec::new(),
-            HashMap::from([(1, -4)]),
+            HashMap::from([(1, -4), (2, -12)]),
             ControlFlowEdge::Fallthrough(4),
             Some(1),
+            LinkedHashSet::from_iter([1, 2]),
         );
         let sub_join_block = BasicBlock::from(
-            vec![Instruction::new(5, Operator::Phi(-3, -4), None)],
-            HashMap::from([(1, 5)]),
+            vec![
+                Instruction::new(5, Operator::Phi(-3, -4), None),
+                Instruction::new(6, Operator::Phi(0, -12), None),
+            ],
+            HashMap::from([(1, 5), (2, 6)]),
             ControlFlowEdge::Branch(6),
             Some(1),
+            LinkedHashSet::from_iter([1, 2]),
         );
         let else_block = BasicBlock::from(
             Vec::new(),
             HashMap::from([(1, -5)]),
             ControlFlowEdge::Fallthrough(6),
             Some(0),
+            LinkedHashSet::from_iter([1]),
         );
         let join_block = BasicBlock::from(
-            vec![Instruction::new(6, Operator::Phi(5, -5), None)],
-            HashMap::from([(1, 6)]),
+            vec![
+                Instruction::new(7, Operator::Phi(5, -5), None),
+                Instruction::new(8, Operator::Phi(6, 0), None),
+            ],
+            HashMap::from([(1, 7), (2, 8)]),
             ControlFlowEdge::Leaf,
             Some(0),
+            LinkedHashSet::from_iter([1, 2]),
         );
 
         let expected_body = Body::from(
@@ -937,10 +957,10 @@ mod tests {
                 else_block,
                 join_block,
             ],
-            7,
+            9,
         );
 
-        let expected_const_body = ConstBody::from(HashSet::from([1, 3, 4, 5]));
+        let expected_const_body = ConstBody::from(HashSet::from([0, 1, 3, 4, 5, 12]));
 
         assert_eq!(body, expected_body);
         assert_eq!(const_body, expected_const_body);
