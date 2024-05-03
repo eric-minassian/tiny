@@ -151,11 +151,55 @@ where
                 } else {
                     new_identifier_map.insert(*identifier_id, *left_instr_id);
                 }
+            } else {
+                let new_instr_id = self.body.get_instruction_count() as i32;
+                self.body.increment_instruction_count();
+
+                let missing_side = self.const_body.insert_returning_id(0);
+
+                new_instructions.push(Instruction::new(
+                    new_instr_id,
+                    Operator::Phi(*left_instr_id, missing_side),
+                    None,
+                ));
+
+                new_identifier_map.insert(*identifier_id, new_instr_id);
             }
         }
-        // @TODO: Fix if a new variable is assigned a value
 
-        println!("HERE: {:?}", new_identifier_map);
+        for (identifier_id, right_instr_id) in right_identifier_map.iter() {
+            if let Some(left_instr_id) = left_identifier_map.get(&identifier_id) {
+                if !new_identifier_map.contains_key(identifier_id) {
+                    if right_instr_id != left_instr_id {
+                        let new_instr_id = self.body.get_instruction_count() as i32;
+                        self.body.increment_instruction_count();
+
+                        new_instructions.push(Instruction::new(
+                            new_instr_id as i32,
+                            Operator::Phi(*left_instr_id, *right_instr_id),
+                            None,
+                        ));
+
+                        new_identifier_map.insert(*identifier_id, new_instr_id);
+                    } else {
+                        new_identifier_map.insert(*identifier_id, *right_instr_id);
+                    }
+                }
+            } else {
+                let new_instr_id = self.body.get_instruction_count() as i32;
+                self.body.increment_instruction_count();
+
+                let missing_side = self.const_body.insert_returning_id(0);
+
+                new_instructions.push(Instruction::new(
+                    new_instr_id,
+                    Operator::Phi(*right_instr_id, missing_side),
+                    None,
+                ));
+
+                new_identifier_map.insert(*identifier_id, new_instr_id);
+            }
+        }
 
         let block = self.body.get_mut_block(self.cur_block).unwrap();
 
@@ -610,9 +654,10 @@ mod tests {
         /*
         let x <- 1;
         if x < 1 then
-            let x <- 2;
+            let y <- 2;
+            let z <- 13;
         else
-            let x <- 4;
+            let y <- 4;
         fi;
         */
         let tokens = [
@@ -630,6 +675,11 @@ mod tests {
             Token::Identifier(2),
             Token::Assignment,
             Token::Number(2),
+            Token::Semicolon,
+            Token::Let,
+            Token::Identifier(3),
+            Token::Assignment,
+            Token::Number(13),
             Token::Semicolon,
             Token::Else,
             Token::Let,
@@ -663,7 +713,7 @@ mod tests {
         );
         let then_block = BasicBlock::from(
             Vec::new(),
-            HashMap::from([(1, -1), (2, -2)]),
+            HashMap::from([(1, -1), (2, -2), (3, -13)]),
             ControlFlowEdge::Branch(3),
             Some(0),
         );
@@ -674,15 +724,18 @@ mod tests {
             Some(0),
         );
         let join_block = BasicBlock::from(
-            vec![Instruction::new(3, Operator::Phi(-2, -4), None)],
-            HashMap::from([(1, -1), (2, 3)]),
+            vec![
+                Instruction::new(3, Operator::Phi(-2, -4), None),
+                Instruction::new(4, Operator::Phi(-13, 0), None),
+            ],
+            HashMap::from([(1, -1), (2, 3), (3, 4)]),
             ControlFlowEdge::Leaf,
             Some(0),
         );
 
-        let expected_body = Body::from(0, vec![main_block, then_block, else_block, join_block], 4);
+        let expected_body = Body::from(0, vec![main_block, then_block, else_block, join_block], 5);
 
-        let expected_const_body = ConstBody::from(HashSet::from([1, 2, 4]));
+        let expected_const_body = ConstBody::from(HashSet::from([0, 1, 2, 4, 13]));
 
         assert_eq!(body, expected_body);
         assert_eq!(const_body, expected_const_body);
