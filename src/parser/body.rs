@@ -48,6 +48,10 @@ where
         parser.body
     }
 
+    pub fn get_block_mut(&mut self, id: BasicBlockId) -> &mut BasicBlock {
+        self.body.get_mut_block(id).unwrap()
+    }
+
     fn match_token(&mut self, expected: Token) -> Result<()> {
         match_token(&mut self.tokens, expected)
     }
@@ -56,17 +60,21 @@ where
         self.statement()?;
 
         while let Some(token) = self.tokens.peek() {
-            match token {
-                Ok(Token::Semicolon) => {
-                    self.tokens.next();
-                    match self.tokens.peek() {
-                        Some(Ok(
-                            Token::Let | Token::Call | Token::If | Token::While | Token::Return,
-                        )) => self.statement()?,
-                        _ => break,
+            if let Ok(Token::Semicolon) = token {
+                self.tokens.next();
+
+                if let Some(Ok(token)) = self.tokens.peek() {
+                    if matches!(
+                        token,
+                        Token::Let | Token::Call | Token::If | Token::While | Token::Return
+                    ) {
+                        self.statement()?;
+                    } else {
+                        break;
                     }
                 }
-                _ => break,
+            } else {
+                break;
             }
         }
 
@@ -74,11 +82,12 @@ where
     }
 
     fn statement(&mut self) -> Result<()> {
-        match self
+        let token = self
             .tokens
             .peek()
-            .ok_or_else(|| Error::UnexpectedEndOfFile)?
-        {
+            .ok_or_else(|| Error::UnexpectedEndOfFile)?;
+
+        match token {
             Ok(Token::Let) => self.assignment(),
             Ok(Token::Call) => self.func_call(),
             Ok(Token::If) => self.if_statement(),
@@ -115,77 +124,64 @@ where
     }
 
     fn get_and_set_phi(&mut self, left_block_id: BasicBlockId, right_block_id: BasicBlockId) {
-        let left_block = self.body.get_mut_block(left_block_id).unwrap();
+        // Retrieve mutable references to the left block and clone the modified identifiers and identifier map
+        let left_block = self.get_block_mut(left_block_id);
         let left_modified_identifiers = left_block.get_modified_identifiers().clone();
-        let left_identifier_map = left_block.get_identifier_map_copy();
+        let left_identifier_map = left_block.get_identifier_map().clone();
 
-        let right_block = self.body.get_mut_block(right_block_id).unwrap();
+        // Retrieve mutable references to the right block and clone the modified identifiers and identifier map
+        let right_block = self.get_block_mut(right_block_id);
         let right_modified_identifiers = right_block.get_modified_identifiers().clone();
-        let right_identifier_map = right_block.get_identifier_map_copy();
+        let right_identifier_map = right_block.get_identifier_map().clone();
 
+        // Initialize new structures for the upcoming phi nodes
         let mut new_identifier_map = HashMap::from(left_identifier_map.clone());
         let mut new_instructions = Vec::new();
         let mut modified_identifiers = LinkedHashSet::new();
 
-        let dif = left_modified_identifiers
+        // Determine identifiers that are modified in either block
+        let unified_mods = left_modified_identifiers
             .union(&right_modified_identifiers)
             .cloned();
 
-        for identifier_id in dif {
-            let left_instr_id = left_identifier_map.get(&identifier_id);
-            let right_instr_id = right_identifier_map.get(&identifier_id);
+        for id in unified_mods {
+            let left_instr_id = left_identifier_map.get(&id);
+            let right_instr_id = right_identifier_map.get(&id);
 
-            if left_instr_id.is_some() && right_instr_id.is_some() {
-                let left_instr_id = left_instr_id.unwrap();
-                let right_instr_id = right_instr_id.unwrap();
-
+            // Check if the identifier is modified in both blocks
+            if let (Some(&left_instr_id), Some(&right_instr_id)) = (left_instr_id, right_instr_id) {
                 let new_instr_id = self.body.get_instruction_count() as i32;
                 self.body.increment_instruction_count();
 
                 new_instructions.push(Rc::new(Instruction::new(
-                    new_instr_id as i32,
-                    Operator::Phi(*left_instr_id, *right_instr_id),
+                    new_instr_id,
+                    Operator::Phi(left_instr_id, right_instr_id),
                     None,
                 )));
 
-                new_identifier_map.insert(identifier_id, new_instr_id);
-                modified_identifiers.insert(identifier_id);
-            } else if left_instr_id.is_some() {
-                let left_instr_id = left_instr_id.unwrap();
+                new_identifier_map.insert(id, new_instr_id);
+                modified_identifiers.insert(id);
 
+            // Handle cases where an identifier is modified in only one of the blocks
+            } else if let Some(&instr_id) = left_instr_id.or(right_instr_id) {
                 let new_instr_id = self.body.get_instruction_count() as i32;
                 self.body.increment_instruction_count();
 
                 let missing_side = self.const_body.insert_returning_id(0);
+                let phi_operator = if left_instr_id.is_some() {
+                    Operator::Phi(instr_id, missing_side)
+                } else {
+                    Operator::Phi(missing_side, instr_id)
+                };
 
-                new_instructions.push(Rc::new(Instruction::new(
-                    new_instr_id,
-                    Operator::Phi(*left_instr_id, missing_side),
-                    None,
-                )));
+                new_instructions.push(Rc::new(Instruction::new(new_instr_id, phi_operator, None)));
 
-                new_identifier_map.insert(identifier_id, new_instr_id);
-                modified_identifiers.insert(identifier_id);
-            } else if right_instr_id.is_some() {
-                let right_instr_id = right_instr_id.unwrap();
-
-                let new_instr_id = self.body.get_instruction_count() as i32;
-                self.body.increment_instruction_count();
-
-                let missing_side = self.const_body.insert_returning_id(0);
-
-                new_instructions.push(Rc::new(Instruction::new(
-                    new_instr_id,
-                    Operator::Phi(missing_side, *right_instr_id),
-                    None,
-                )));
-
-                new_identifier_map.insert(identifier_id, new_instr_id);
-                modified_identifiers.insert(identifier_id);
+                new_identifier_map.insert(id, new_instr_id);
+                modified_identifiers.insert(id);
             }
         }
 
-        let block = self.body.get_mut_block(self.cur_block).unwrap();
+        let block = self.get_block_mut(self.cur_block);
 
         block.update_identifier_map(new_identifier_map);
         block.update_instructions(new_instructions);
@@ -193,81 +189,78 @@ where
     }
 
     fn if_statement(&mut self) -> Result<()> {
+        // Ensure the next token is 'if' and consume it
         self.match_token(Token::If)?;
 
-        let (cmp_instr_id, opposite_relop) = self.relation()?;
+        // Evaluate the condition and get the comparator and opposite relational operator
+        let (comparator_instruction_id, opposite_relop) = self.relation()?;
 
+        // Ensure the next token is 'then' and consume it
         self.match_token(Token::Then)?;
 
-        // Add Branch Instruction
-        let branch_block_id = self.cur_block;
-        let branch_instr_id = self.body.get_instruction_count() as i32;
+        // Setup for branch instruction
+        let current_branch_block_id = self.cur_block;
+        let branch_instruction_id = self.body.get_instruction_count() as i32;
         self.body.increment_instruction_count();
-        let branch_block_identifier_map = self
-            .body
-            .get_mut_block(branch_block_id)
-            .as_ref()
-            .unwrap()
-            .get_identifier_map_copy();
-        let branch_block_dom_instr_map = self
-            .body
-            .get_mut_block(branch_block_id)
-            .as_ref()
-            .unwrap()
+        let identifier_map_copy = self
+            .get_block_mut(current_branch_block_id)
+            .get_identifier_map()
+            .clone();
+        let dominance_instruction_map_copy = self
+            .get_block_mut(current_branch_block_id)
             .get_dom_instr_map_copy();
 
-        // Create new then block
+        // Create a new block for the 'then' branch
         let then_block_id = self.body.insert_block(BasicBlock::from(
             Vec::new(),
-            branch_block_identifier_map.clone(),
+            identifier_map_copy.clone(),
             ControlFlowEdge::Leaf,
-            Some(branch_block_id),
+            Some(current_branch_block_id),
             LinkedHashSet::new(),
-            branch_block_dom_instr_map.clone(),
+            dominance_instruction_map_copy.clone(),
         ));
         self.cur_block = then_block_id;
 
-        self.body
-            .get_mut_block(branch_block_id)
-            .unwrap()
+        // Update the control flow from the current block to the 'then' block
+        self.get_block_mut(current_branch_block_id)
             .update_edge(ControlFlowEdge::Fallthrough(then_block_id));
 
+        // Process the statement sequence in the 'then' block
         self.stat_sequence()?;
-
         let then_block_end_id = self.cur_block;
 
-        let mut is_else = false;
-
-        if *self
-            .tokens
-            .peek()
-            .ok_or_else(|| Error::UnexpectedEndOfFile)?
-            == Ok(Token::Else)
-        {
+        // Check if an 'else' branch is present
+        let is_else_present = matches!(
+            self.tokens
+                .peek()
+                .ok_or_else(|| Error::UnexpectedEndOfFile)?,
+            Ok(Token::Else)
+        );
+        if is_else_present {
             self.tokens.next();
-            is_else = true;
 
+            // Create a new block for the 'else' branch
             let else_block_id = self.body.insert_block(BasicBlock::from(
                 Vec::new(),
-                branch_block_identifier_map,
+                identifier_map_copy,
                 ControlFlowEdge::Leaf,
-                Some(branch_block_id),
+                Some(current_branch_block_id),
                 LinkedHashSet::new(),
-                branch_block_dom_instr_map.clone(),
+                dominance_instruction_map_copy.clone(),
             ));
             self.cur_block = else_block_id;
 
+            // Process the statement sequence in the 'else' block
             self.stat_sequence()?;
 
-            self.body
-                .get_mut_block(branch_block_id)
-                .unwrap()
+            // Add branch instruction to jump from the 'if' condition directly to the 'else' block
+            self.get_block_mut(current_branch_block_id)
                 .push_instr_no_dom(Instruction::new(
-                    branch_instr_id,
+                    branch_instruction_id,
                     Operator::Branch(
                         BranchOpcode::from(opposite_relop.clone()),
                         else_block_id,
-                        cmp_instr_id,
+                        comparator_instruction_id,
                     ),
                     None,
                 ));
@@ -275,60 +268,49 @@ where
 
         let else_block_end_id = self.cur_block;
 
+        // Ensure the next token is 'fi' (end of if statement) and consume it
         self.match_token(Token::Fi)?;
 
+        // Create a join block to consolidate the flow from 'then' and 'else'
         let join_block_id = self.body.insert_block(BasicBlock::from(
             Vec::new(),
             HashMap::new(),
             ControlFlowEdge::Leaf,
-            Some(branch_block_id),
+            Some(current_branch_block_id),
             LinkedHashSet::new(),
-            branch_block_dom_instr_map,
+            dominance_instruction_map_copy,
         ));
 
-        if !is_else {
-            self.body
-                .get_mut_block(branch_block_id)
-                .unwrap()
+        // Update control flow for the 'then' block to the join block
+        self.get_block_mut(then_block_end_id)
+            .update_edge(if is_else_present {
+                ControlFlowEdge::Branch(join_block_id)
+            } else {
+                ControlFlowEdge::Fallthrough(join_block_id)
+            });
+
+        // Update current block to the join block
+        self.cur_block = join_block_id;
+
+        // If there was an 'else' block, update its control flow to the join block
+        if is_else_present {
+            self.get_block_mut(else_block_end_id)
+                .update_edge(ControlFlowEdge::Fallthrough(join_block_id));
+            self.get_and_set_phi(then_block_end_id, else_block_end_id);
+        } else {
+            // Add a branch instruction to jump from the 'if' condition directly to the join block
+            self.get_block_mut(current_branch_block_id)
                 .push_instr_no_dom(Instruction::new(
-                    branch_instr_id,
+                    branch_instruction_id,
                     Operator::Branch(
                         BranchOpcode::from(opposite_relop),
                         join_block_id,
-                        cmp_instr_id,
+                        comparator_instruction_id,
                     ),
                     None,
                 ));
-        }
 
-        if is_else {
-            self.body
-                .get_mut_block(then_block_end_id)
-                .as_mut()
-                .unwrap()
-                .update_edge(ControlFlowEdge::Branch(join_block_id));
-        } else {
-            self.body
-                .get_mut_block(then_block_end_id)
-                .as_mut()
-                .unwrap()
-                .update_edge(ControlFlowEdge::Fallthrough(join_block_id));
-        }
-
-        if is_else {
-            self.body
-                .get_mut_block(else_block_end_id)
-                .as_mut()
-                .unwrap()
-                .update_edge(ControlFlowEdge::Fallthrough(join_block_id));
-        }
-
-        self.cur_block = join_block_id;
-
-        if is_else {
-            self.get_and_set_phi(then_block_end_id, else_block_end_id);
-        } else {
-            self.get_and_set_phi(then_block_end_id, branch_block_id);
+            self.get_and_set_phi(then_block_end_id, current_branch_block_id);
         }
         Ok(())
     }
@@ -377,9 +359,7 @@ where
 
                 let instruction_id = self.expression()?;
 
-                self.body
-                    .get_mut_block(self.cur_block)
-                    .unwrap()
+                self.get_block_mut(self.cur_block)
                     .insert_identifier(identifier_id, instruction_id);
 
                 Ok(())
@@ -423,9 +403,7 @@ where
         );
 
         if let Some(dom_instr) = self
-            .body
-            .get_mut_block(self.cur_block)
-            .unwrap()
+            .get_block_mut(self.cur_block)
             .get_dom_instr(&operator_type)
         {
             if let Some(dup_instr_id) = dom_instr.check_dominators(&new_instr) {
@@ -433,18 +411,14 @@ where
             }
 
             let dom_instr = self
-                .body
-                .get_mut_block(self.cur_block)
-                .unwrap()
+                .get_block_mut(self.cur_block)
                 .remove_dom_instr(operator_type.clone())
                 .unwrap();
 
             new_instr.update_dom(dom_instr);
         }
 
-        self.body
-            .get_mut_block(self.cur_block)
-            .unwrap()
+        self.get_block_mut(self.cur_block)
             .push_instr(new_instr.clone(), operator_type);
 
         self.body.increment_instruction_count();

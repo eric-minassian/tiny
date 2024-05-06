@@ -162,8 +162,8 @@ impl BasicBlock {
         self.edge = edge;
     }
 
-    pub fn get_identifier_map_copy(&self) -> HashMap<IdentifierId, InstructionId> {
-        self.identifier_map.clone()
+    pub fn get_identifier_map(&self) -> &HashMap<IdentifierId, InstructionId> {
+        &self.identifier_map
     }
 
     pub fn get_dom_instr_map_copy(&self) -> HashMap<OperatorType, Rc<Instruction>> {
