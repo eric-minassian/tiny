@@ -116,6 +116,10 @@ impl BasicBlock {
         self.dom_instr_map.insert(op_type, instr);
     }
 
+    pub fn push_instr_no_dom(&mut self, instr: Instruction) {
+        self.instructions.push(Rc::new(instr));
+    }
+
     pub fn update_instructions(&mut self, instructions: Vec<Rc<Instruction>>) {
         self.instructions = instructions;
     }
@@ -150,6 +154,10 @@ impl BasicBlock {
 
     pub fn get_identifier_map_copy(&self) -> HashMap<IdentifierId, InstructionId> {
         self.identifier_map.clone()
+    }
+
+    pub fn get_dom_instr_map_copy(&self) -> HashMap<OperatorType, Rc<Instruction>> {
+        self.dom_instr_map.clone()
     }
 
     pub fn get_modified_identifiers(&self) -> &LinkedHashSet<IdentifierId> {

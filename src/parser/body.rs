@@ -1,4 +1,4 @@
-use std::{collections::HashMap, iter::Peekable};
+use std::{collections::HashMap, iter::Peekable, rc::Rc};
 
 use linked_hash_set::LinkedHashSet;
 
@@ -114,213 +114,222 @@ where
         todo!()
     }
 
-    // fn get_and_set_phi(&mut self, left_block_id: BasicBlockId, right_block_id: BasicBlockId) {
-    //     let left_block = self.body.get_mut_block(left_block_id).unwrap();
-    //     let left_modified_identifiers = left_block.get_modified_identifiers().clone();
-    //     let left_identifier_map = left_block.get_identifier_map_copy();
+    fn get_and_set_phi(&mut self, left_block_id: BasicBlockId, right_block_id: BasicBlockId) {
+        let left_block = self.body.get_mut_block(left_block_id).unwrap();
+        let left_modified_identifiers = left_block.get_modified_identifiers().clone();
+        let left_identifier_map = left_block.get_identifier_map_copy();
 
-    //     let right_block = self.body.get_mut_block(right_block_id).unwrap();
-    //     let right_modified_identifiers = right_block.get_modified_identifiers().clone();
-    //     let right_identifier_map = right_block.get_identifier_map_copy();
+        let right_block = self.body.get_mut_block(right_block_id).unwrap();
+        let right_modified_identifiers = right_block.get_modified_identifiers().clone();
+        let right_identifier_map = right_block.get_identifier_map_copy();
 
-    //     let mut new_identifier_map = HashMap::from(left_identifier_map.clone());
-    //     let mut new_instructions = Vec::new();
-    //     let mut modified_identifiers = LinkedHashSet::new();
+        let mut new_identifier_map = HashMap::from(left_identifier_map.clone());
+        let mut new_instructions = Vec::new();
+        let mut modified_identifiers = LinkedHashSet::new();
 
-    //     let dif = left_modified_identifiers
-    //         .union(&right_modified_identifiers)
-    //         .cloned();
+        let dif = left_modified_identifiers
+            .union(&right_modified_identifiers)
+            .cloned();
 
-    //     for identifier_id in dif {
-    //         let left_instr_id = left_identifier_map.get(&identifier_id);
-    //         let right_instr_id = right_identifier_map.get(&identifier_id);
+        for identifier_id in dif {
+            let left_instr_id = left_identifier_map.get(&identifier_id);
+            let right_instr_id = right_identifier_map.get(&identifier_id);
 
-    //         if left_instr_id.is_some() && right_instr_id.is_some() {
-    //             let left_instr_id = left_instr_id.unwrap();
-    //             let right_instr_id = right_instr_id.unwrap();
+            if left_instr_id.is_some() && right_instr_id.is_some() {
+                let left_instr_id = left_instr_id.unwrap();
+                let right_instr_id = right_instr_id.unwrap();
 
-    //             let new_instr_id = self.body.get_instruction_count() as i32;
-    //             self.body.increment_instruction_count();
+                let new_instr_id = self.body.get_instruction_count() as i32;
+                self.body.increment_instruction_count();
 
-    //             new_instructions.push(Instruction::new(
-    //                 new_instr_id as i32,
-    //                 Operator::Phi(*left_instr_id, *right_instr_id),
-    //                 None,
-    //             ));
+                new_instructions.push(Rc::new(Instruction::new(
+                    new_instr_id as i32,
+                    Operator::Phi(*left_instr_id, *right_instr_id),
+                    None,
+                )));
 
-    //             new_identifier_map.insert(identifier_id, new_instr_id);
-    //             modified_identifiers.insert(identifier_id);
-    //         } else if left_instr_id.is_some() {
-    //             let left_instr_id = left_instr_id.unwrap();
+                new_identifier_map.insert(identifier_id, new_instr_id);
+                modified_identifiers.insert(identifier_id);
+            } else if left_instr_id.is_some() {
+                let left_instr_id = left_instr_id.unwrap();
 
-    //             let new_instr_id = self.body.get_instruction_count() as i32;
-    //             self.body.increment_instruction_count();
+                let new_instr_id = self.body.get_instruction_count() as i32;
+                self.body.increment_instruction_count();
 
-    //             let missing_side = self.const_body.insert_returning_id(0);
+                let missing_side = self.const_body.insert_returning_id(0);
 
-    //             new_instructions.push(Instruction::new(
-    //                 new_instr_id,
-    //                 Operator::Phi(*left_instr_id, missing_side),
-    //                 None,
-    //             ));
+                new_instructions.push(Rc::new(Instruction::new(
+                    new_instr_id,
+                    Operator::Phi(*left_instr_id, missing_side),
+                    None,
+                )));
 
-    //             new_identifier_map.insert(identifier_id, new_instr_id);
-    //             modified_identifiers.insert(identifier_id);
-    //         } else if right_instr_id.is_some() {
-    //             let right_instr_id = right_instr_id.unwrap();
+                new_identifier_map.insert(identifier_id, new_instr_id);
+                modified_identifiers.insert(identifier_id);
+            } else if right_instr_id.is_some() {
+                let right_instr_id = right_instr_id.unwrap();
 
-    //             let new_instr_id = self.body.get_instruction_count() as i32;
-    //             self.body.increment_instruction_count();
+                let new_instr_id = self.body.get_instruction_count() as i32;
+                self.body.increment_instruction_count();
 
-    //             let missing_side = self.const_body.insert_returning_id(0);
+                let missing_side = self.const_body.insert_returning_id(0);
 
-    //             new_instructions.push(Instruction::new(
-    //                 new_instr_id,
-    //                 Operator::Phi(missing_side, *right_instr_id),
-    //                 None,
-    //             ));
+                new_instructions.push(Rc::new(Instruction::new(
+                    new_instr_id,
+                    Operator::Phi(missing_side, *right_instr_id),
+                    None,
+                )));
 
-    //             new_identifier_map.insert(identifier_id, new_instr_id);
-    //             modified_identifiers.insert(identifier_id);
-    //         }
-    //     }
+                new_identifier_map.insert(identifier_id, new_instr_id);
+                modified_identifiers.insert(identifier_id);
+            }
+        }
 
-    //     let block = self.body.get_mut_block(self.cur_block).unwrap();
+        let block = self.body.get_mut_block(self.cur_block).unwrap();
 
-    //     block.update_identifier_map(new_identifier_map);
-    //     block.update_instructions(new_instructions);
-    //     block.update_modified_identifiers(modified_identifiers);
-    // }
+        block.update_identifier_map(new_identifier_map);
+        block.update_instructions(new_instructions);
+        block.update_modified_identifiers(modified_identifiers);
+    }
 
     fn if_statement(&mut self) -> Result<()> {
-        // self.match_token(Token::If)?;
+        self.match_token(Token::If)?;
 
-        // let (cmp_instr_id, opposite_relop) = self.relation()?;
+        let (cmp_instr_id, opposite_relop) = self.relation()?;
 
-        // self.match_token(Token::Then)?;
+        self.match_token(Token::Then)?;
 
-        // // Add Branch Instruction
-        // let branch_block_id = self.cur_block;
-        // let branch_instr_id = self.body.get_instruction_count() as i32;
-        // self.body.increment_instruction_count();
-        // let branch_block_identifier_map = self
-        //     .body
-        //     .get_mut_block(branch_block_id)
-        //     .as_ref()
-        //     .unwrap()
-        //     .get_identifier_map_copy();
+        // Add Branch Instruction
+        let branch_block_id = self.cur_block;
+        let branch_instr_id = self.body.get_instruction_count() as i32;
+        self.body.increment_instruction_count();
+        let branch_block_identifier_map = self
+            .body
+            .get_mut_block(branch_block_id)
+            .as_ref()
+            .unwrap()
+            .get_identifier_map_copy();
+        let branch_block_dom_instr_map = self
+            .body
+            .get_mut_block(branch_block_id)
+            .as_ref()
+            .unwrap()
+            .get_dom_instr_map_copy();
 
-        // // Create new then block
-        // let then_block_id = self.body.insert_block(BasicBlock::from(
-        //     Vec::new(),
-        //     branch_block_identifier_map.clone(),
-        //     ControlFlowEdge::Leaf,
-        //     Some(branch_block_id),
-        //     LinkedHashSet::new(),
-        // ));
-        // self.cur_block = then_block_id;
+        // Create new then block
+        let then_block_id = self.body.insert_block(BasicBlock::from(
+            Vec::new(),
+            branch_block_identifier_map.clone(),
+            ControlFlowEdge::Leaf,
+            Some(branch_block_id),
+            LinkedHashSet::new(),
+            branch_block_dom_instr_map.clone(),
+        ));
+        self.cur_block = then_block_id;
 
-        // self.body
-        //     .get_mut_block(branch_block_id)
-        //     .unwrap()
-        //     .update_edge(ControlFlowEdge::Fallthrough(then_block_id));
+        self.body
+            .get_mut_block(branch_block_id)
+            .unwrap()
+            .update_edge(ControlFlowEdge::Fallthrough(then_block_id));
 
-        // self.stat_sequence()?;
+        self.stat_sequence()?;
 
-        // let then_block_end_id = self.cur_block;
+        let then_block_end_id = self.cur_block;
 
-        // let mut is_else = false;
+        let mut is_else = false;
 
-        // if *self
-        //     .tokens
-        //     .peek()
-        //     .ok_or_else(|| Error::UnexpectedEndOfFile)?
-        //     == Ok(Token::Else)
-        // {
-        //     self.tokens.next();
-        //     is_else = true;
+        if *self
+            .tokens
+            .peek()
+            .ok_or_else(|| Error::UnexpectedEndOfFile)?
+            == Ok(Token::Else)
+        {
+            self.tokens.next();
+            is_else = true;
 
-        //     let else_block_id = self.body.insert_block(BasicBlock::from(
-        //         Vec::new(),
-        //         branch_block_identifier_map,
-        //         ControlFlowEdge::Leaf,
-        //         Some(branch_block_id),
-        //         LinkedHashSet::new(),
-        //     ));
-        //     self.cur_block = else_block_id;
+            let else_block_id = self.body.insert_block(BasicBlock::from(
+                Vec::new(),
+                branch_block_identifier_map,
+                ControlFlowEdge::Leaf,
+                Some(branch_block_id),
+                LinkedHashSet::new(),
+                branch_block_dom_instr_map.clone(),
+            ));
+            self.cur_block = else_block_id;
 
-        //     self.stat_sequence()?;
+            self.stat_sequence()?;
 
-        //     self.body
-        //         .get_mut_block(branch_block_id)
-        //         .unwrap()
-        //         .insert_instruction(Instruction::new(
-        //             branch_instr_id,
-        //             Operator::Branch(
-        //                 BranchOpcode::from(opposite_relop.clone()),
-        //                 else_block_id,
-        //                 cmp_instr_id,
-        //             ),
-        //             None,
-        //         ));
-        // }
+            self.body
+                .get_mut_block(branch_block_id)
+                .unwrap()
+                .push_instr_no_dom(Instruction::new(
+                    branch_instr_id,
+                    Operator::Branch(
+                        BranchOpcode::from(opposite_relop.clone()),
+                        else_block_id,
+                        cmp_instr_id,
+                    ),
+                    None,
+                ));
+        }
 
-        // let else_block_end_id = self.cur_block;
+        let else_block_end_id = self.cur_block;
 
-        // self.match_token(Token::Fi)?;
+        self.match_token(Token::Fi)?;
 
-        // let join_block_id = self.body.insert_block(BasicBlock::from(
-        //     Vec::new(),
-        //     HashMap::new(),
-        //     ControlFlowEdge::Leaf,
-        //     Some(branch_block_id),
-        //     LinkedHashSet::new(),
-        // ));
+        let join_block_id = self.body.insert_block(BasicBlock::from(
+            Vec::new(),
+            HashMap::new(),
+            ControlFlowEdge::Leaf,
+            Some(branch_block_id),
+            LinkedHashSet::new(),
+            branch_block_dom_instr_map,
+        ));
 
-        // if !is_else {
-        //     self.body
-        //         .get_mut_block(branch_block_id)
-        //         .unwrap()
-        //         .insert_instruction(Instruction::new(
-        //             branch_instr_id,
-        //             Operator::Branch(
-        //                 BranchOpcode::from(opposite_relop),
-        //                 join_block_id,
-        //                 cmp_instr_id,
-        //             ),
-        //             None,
-        //         ));
-        // }
+        if !is_else {
+            self.body
+                .get_mut_block(branch_block_id)
+                .unwrap()
+                .push_instr_no_dom(Instruction::new(
+                    branch_instr_id,
+                    Operator::Branch(
+                        BranchOpcode::from(opposite_relop),
+                        join_block_id,
+                        cmp_instr_id,
+                    ),
+                    None,
+                ));
+        }
 
-        // if is_else {
-        //     self.body
-        //         .get_mut_block(then_block_end_id)
-        //         .as_mut()
-        //         .unwrap()
-        //         .update_edge(ControlFlowEdge::Branch(join_block_id));
-        // } else {
-        //     self.body
-        //         .get_mut_block(then_block_end_id)
-        //         .as_mut()
-        //         .unwrap()
-        //         .update_edge(ControlFlowEdge::Fallthrough(join_block_id));
-        // }
+        if is_else {
+            self.body
+                .get_mut_block(then_block_end_id)
+                .as_mut()
+                .unwrap()
+                .update_edge(ControlFlowEdge::Branch(join_block_id));
+        } else {
+            self.body
+                .get_mut_block(then_block_end_id)
+                .as_mut()
+                .unwrap()
+                .update_edge(ControlFlowEdge::Fallthrough(join_block_id));
+        }
 
-        // if is_else {
-        //     self.body
-        //         .get_mut_block(else_block_end_id)
-        //         .as_mut()
-        //         .unwrap()
-        //         .update_edge(ControlFlowEdge::Fallthrough(join_block_id));
-        // }
+        if is_else {
+            self.body
+                .get_mut_block(else_block_end_id)
+                .as_mut()
+                .unwrap()
+                .update_edge(ControlFlowEdge::Fallthrough(join_block_id));
+        }
 
-        // self.cur_block = join_block_id;
+        self.cur_block = join_block_id;
 
-        // if is_else {
-        //     self.get_and_set_phi(then_block_end_id, else_block_end_id);
-        // } else {
-        //     self.get_and_set_phi(then_block_end_id, branch_block_id);
-        // }
+        if is_else {
+            self.get_and_set_phi(then_block_end_id, else_block_end_id);
+        } else {
+            self.get_and_set_phi(then_block_end_id, branch_block_id);
+        }
         Ok(())
     }
 
@@ -728,6 +737,181 @@ mod tests {
         let expected_body = Body::from(0, vec![main_block], 2);
 
         let expected_const_body = ConstBody::from(HashSet::from([1, 3]));
+
+        assert_eq!(body, expected_body);
+        assert_eq!(const_body, expected_const_body);
+    }
+
+    #[test]
+    fn identifier_duplicate_assignment() {
+        /*
+        let x <- 1 + 3;
+        let y <- x + 3;
+        let a <- x + y;
+        let z <- x + 3;
+        */
+
+        let tokens = [
+            Token::Let,
+            Token::Identifier(1),
+            Token::Assignment,
+            Token::Number(1),
+            Token::Add,
+            Token::Number(3),
+            Token::Semicolon,
+            Token::Let,
+            Token::Identifier(2),
+            Token::Assignment,
+            Token::Identifier(1),
+            Token::Add,
+            Token::Number(3),
+            Token::Semicolon,
+            Token::Let,
+            Token::Identifier(3),
+            Token::Assignment,
+            Token::Identifier(1),
+            Token::Add,
+            Token::Identifier(2),
+            Token::Semicolon,
+            Token::Let,
+            Token::Identifier(4),
+            Token::Assignment,
+            Token::Identifier(1),
+            Token::Add,
+            Token::Number(3),
+            Token::Semicolon,
+        ];
+        let mut const_body = ConstBody::new();
+
+        let body = BodyParser::new(
+            &mut tokens.map(|t| Ok(t)).into_iter().peekable(),
+            &mut const_body,
+        )
+        .parse();
+
+        let b0_insr_1 = Rc::new(Instruction::new(
+            1,
+            Operator::StoredBinaryOp(StoredBinaryOpcode::Add, -1, -3),
+            None,
+        ));
+        let b0_insr_2 = Rc::new(Instruction::new(
+            2,
+            Operator::StoredBinaryOp(StoredBinaryOpcode::Add, 1, -3),
+            Some(b0_insr_1.clone()),
+        ));
+        let b0_insr_3 = Rc::new(Instruction::new(
+            3,
+            Operator::StoredBinaryOp(StoredBinaryOpcode::Add, 1, 2),
+            Some(b0_insr_2.clone()),
+        ));
+
+        let main_block = BasicBlock::from(
+            vec![b0_insr_1, b0_insr_2, b0_insr_3.clone()],
+            HashMap::from([(1, 1), (2, 2), (3, 3), (4, 2)]),
+            ControlFlowEdge::Leaf,
+            None,
+            LinkedHashSet::from_iter([1, 2, 3, 4]),
+            HashMap::from([(OperatorType::Add, b0_insr_3)]),
+        );
+        let expected_body = Body::from(0, vec![main_block], 4);
+
+        let expected_const_body = ConstBody::from(HashSet::from([1, 3]));
+
+        assert_eq!(body, expected_body);
+        assert_eq!(const_body, expected_const_body);
+    }
+
+    #[test]
+    fn simple_if_statement() {
+        /*
+        let x <- 1;
+        if x < 1 then
+            let x <- 2;
+        else
+            let x <- 4;
+        fi;
+        */
+        let tokens = [
+            Token::Let,
+            Token::Identifier(1),
+            Token::Assignment,
+            Token::Number(1),
+            Token::Semicolon,
+            Token::If,
+            Token::Identifier(1),
+            Token::RelOp(RelOp::Lt),
+            Token::Number(1),
+            Token::Then,
+            Token::Let,
+            Token::Identifier(1),
+            Token::Assignment,
+            Token::Number(2),
+            Token::Semicolon,
+            Token::Else,
+            Token::Let,
+            Token::Identifier(1),
+            Token::Assignment,
+            Token::Number(4),
+            Token::Semicolon,
+            Token::Fi,
+            Token::Semicolon,
+        ];
+
+        let mut const_body = ConstBody::new();
+
+        let body = BodyParser::new(
+            &mut tokens.map(|t| Ok(t)).into_iter().peekable(),
+            &mut const_body,
+        )
+        .parse();
+
+        let b0_insr_1 = Rc::new(Instruction::new(
+            1,
+            Operator::StoredBinaryOp(StoredBinaryOpcode::Cmp, -1, -1),
+            None,
+        ));
+        let b0_insr_2 = Rc::new(Instruction::new(
+            2,
+            Operator::Branch(BranchOpcode::Ge, 2, 1),
+            None,
+        ));
+
+        let main_block = BasicBlock::from(
+            vec![b0_insr_1.clone(), b0_insr_2],
+            HashMap::from([(1, -1)]),
+            ControlFlowEdge::Fallthrough(1),
+            None,
+            LinkedHashSet::from_iter([1]),
+            HashMap::from([(OperatorType::Cmp, b0_insr_1.clone())]),
+        );
+        let then_block = BasicBlock::from(
+            Vec::new(),
+            HashMap::from([(1, -2)]),
+            ControlFlowEdge::Branch(3),
+            Some(0),
+            LinkedHashSet::from_iter([1]),
+            HashMap::from([(OperatorType::Cmp, b0_insr_1.clone())]),
+        );
+        let else_block = BasicBlock::from(
+            Vec::new(),
+            HashMap::from([(1, -4)]),
+            ControlFlowEdge::Fallthrough(3),
+            Some(0),
+            LinkedHashSet::from_iter([1]),
+            HashMap::from([(OperatorType::Cmp, b0_insr_1.clone())]),
+        );
+        let join_block = BasicBlock::from(
+            vec![Rc::new(Instruction::new(3, Operator::Phi(-2, -4), None))],
+            HashMap::from([(1, 3)]),
+            ControlFlowEdge::Leaf,
+            Some(0),
+            LinkedHashSet::from_iter([1]),
+            HashMap::from([(OperatorType::Cmp, b0_insr_1)]),
+        );
+
+        let expected_body = Body::from(0, vec![main_block, then_block, else_block, join_block], 4);
+
+        let expected_const_body = ConstBody::from(HashSet::from([1, 2, 4]));
 
         assert_eq!(body, expected_body);
         assert_eq!(const_body, expected_const_body);
