@@ -1,4 +1,4 @@
-use std::mem::discriminant;
+use std::{mem::discriminant, rc::Rc};
 
 use crate::lexer::RelOp;
 
@@ -7,14 +7,14 @@ use super::block::BasicBlockId;
 pub type InstructionId = i32;
 
 #[derive(Debug, PartialEq, Clone)]
-pub struct Instruction<'a> {
+pub struct Instruction {
     id: InstructionId,
     operator: Operator,
-    dominator: Option<&'a Instruction<'a>>,
+    dominator: Option<Rc<Instruction>>,
 }
 
-impl<'a> Instruction<'a> {
-    pub fn new(id: InstructionId, operator: Operator, dominator: Option<&'a Instruction>) -> Self {
+impl Instruction {
+    pub fn new(id: InstructionId, operator: Operator, dominator: Option<Rc<Instruction>>) -> Self {
         if let Some(ssa) = &dominator {
             assert_eq!(discriminant(&operator), discriminant(&ssa.operator))
         }
@@ -26,15 +26,23 @@ impl<'a> Instruction<'a> {
         }
     }
 
+    pub fn update_dom(&mut self, dom: Rc<Instruction>) {
+        self.dominator = Some(dom);
+    }
+
     pub fn check_dominators(&self, ssa: &Instruction) -> Option<InstructionId> {
-        let mut dominator = self.dominator;
+        if self.operator == ssa.operator {
+            return Some(self.id);
+        }
+
+        let mut dominator = self.dominator.clone();
 
         while let Some(d) = dominator {
             if d.operator == ssa.operator {
                 return Some(d.id);
             }
 
-            dominator = d.dominator;
+            dominator = d.dominator.clone();
         }
 
         None
@@ -87,6 +95,28 @@ pub enum Operator {
     WriteNL,
 }
 
+#[derive(Debug, PartialEq, Eq, Hash, Clone)]
+pub enum OperatorType {
+    Add,
+    Sub,
+    Mul,
+    Div,
+    Cmp,
+}
+
+impl From<&StoredBinaryOpcode> for OperatorType {
+    fn from(op: &StoredBinaryOpcode) -> Self {
+        match op {
+            StoredBinaryOpcode::Add => Self::Add,
+            StoredBinaryOpcode::Sub => Self::Sub,
+            StoredBinaryOpcode::Mul => Self::Mul,
+            StoredBinaryOpcode::Div => Self::Div,
+            StoredBinaryOpcode::Cmp => Self::Cmp,
+            StoredBinaryOpcode::Phi => panic!("Phi is not an operator type"),
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -101,34 +131,50 @@ mod tests {
         Instruction::new(
             2,
             Operator::StoredBinaryOp(StoredBinaryOpcode::Add, 1, 1),
-            Some(&ssa),
+            Some(Rc::new(ssa)),
         );
     }
 
     #[test]
-    fn ssa_check_dominators() {
-        let ssa_1 = Instruction::new(
+    fn simple_dominator_check() {
+        let ssa_1 = Rc::new(Instruction::new(
             1,
             Operator::StoredBinaryOp(StoredBinaryOpcode::Add, 1, 1),
             None,
-        );
+        ));
         let ssa_2 = Instruction::new(
             2,
-            Operator::StoredBinaryOp(StoredBinaryOpcode::Add, 1, 0),
-            Some(&ssa_1),
+            Operator::StoredBinaryOp(StoredBinaryOpcode::Add, 1, 1),
+            None,
         );
+
+        assert_eq!(ssa_1.check_dominators(&ssa_2), Some(1));
+    }
+
+    #[test]
+    fn ssa_check_dominators() {
+        let ssa_1 = Rc::new(Instruction::new(
+            1,
+            Operator::StoredBinaryOp(StoredBinaryOpcode::Add, 1, 1),
+            None,
+        ));
+        let ssa_2 = Rc::new(Instruction::new(
+            2,
+            Operator::StoredBinaryOp(StoredBinaryOpcode::Add, 1, 0),
+            Some(ssa_1),
+        ));
         let ssa_3 = Instruction::new(
             3,
             Operator::StoredBinaryOp(StoredBinaryOpcode::Add, 1, 1),
-            Some(&ssa_2),
+            Some(ssa_2.clone()),
         );
         let ssa_4 = Instruction::new(
             4,
             Operator::StoredBinaryOp(StoredBinaryOpcode::Add, 3, 3),
-            Some(&ssa_3),
+            Some(Rc::new(ssa_3.clone())),
         );
 
-        assert_eq!(ssa_2.check_dominators(&ssa_3), Some(1));
+        assert_eq!(ssa_2.clone().check_dominators(&ssa_3), Some(1));
         assert_eq!(ssa_2.check_dominators(&ssa_4), None);
     }
 }

@@ -1,4 +1,4 @@
-use std::{collections::HashMap, iter::Peekable};
+use std::{collections::HashMap, iter::Peekable, rc::Rc};
 
 use linked_hash_set::LinkedHashSet;
 
@@ -6,7 +6,9 @@ use crate::{
     error::{Error, Result},
     ir::{
         block::{BasicBlock, BasicBlockId, Body, ControlFlowEdge},
-        ssa::{BranchOpcode, Instruction, InstructionId, Operator, StoredBinaryOpcode},
+        ssa::{
+            BranchOpcode, Instruction, InstructionId, Operator, OperatorType, StoredBinaryOpcode,
+        },
         ConstBody,
     },
     lexer::{RelOp, Token},
@@ -14,21 +16,21 @@ use crate::{
 
 use super::match_token;
 
-pub struct BodyParser<'a, 'b, T>
+pub struct BodyParser<'a, T>
 where
     T: Iterator<Item = Result<Token>>,
 {
-    tokens: &'b mut Peekable<T>,
-    const_body: &'b mut ConstBody,
-    body: Body<'a>,
+    tokens: &'a mut Peekable<T>,
+    const_body: &'a mut ConstBody,
+    body: Body,
     cur_block: BasicBlockId,
 }
 
-impl<'a, 'b, T> BodyParser<'a, 'b, T>
+impl<'a, T> BodyParser<'a, T>
 where
     T: Iterator<Item = Result<Token>>,
 {
-    pub fn new(tokens: &'b mut Peekable<T>, const_body: &'b mut ConstBody) -> Self {
+    pub fn new(tokens: &'a mut Peekable<T>, const_body: &'a mut ConstBody) -> Self {
         let body = Body::new();
 
         Self {
@@ -39,7 +41,7 @@ where
         }
     }
 
-    pub fn parse(self) -> Body<'a> {
+    pub fn parse(self) -> Body {
         let mut parser = self;
         parser.stat_sequence().unwrap();
 
@@ -48,13 +50,6 @@ where
 
     fn match_token(&mut self, expected: Token) -> Result<()> {
         match_token(&mut self.tokens, expected)
-    }
-
-    fn push_instruction(&mut self, instruction: Instruction<'a>) {
-        self.body
-            .get_mut_block(self.cur_block)
-            .unwrap()
-            .insert_instruction(instruction);
     }
 
     fn stat_sequence(&mut self) -> Result<()> {
@@ -147,11 +142,11 @@ where
                 let new_instr_id = self.body.get_instruction_count() as i32;
                 self.body.increment_instruction_count();
 
-                new_instructions.push(Instruction::new(
+                new_instructions.push(Rc::new(Instruction::new(
                     new_instr_id as i32,
                     Operator::Phi(*left_instr_id, *right_instr_id),
                     None,
-                ));
+                )));
 
                 new_identifier_map.insert(identifier_id, new_instr_id);
                 modified_identifiers.insert(identifier_id);
@@ -163,11 +158,11 @@ where
 
                 let missing_side = self.const_body.insert_returning_id(0);
 
-                new_instructions.push(Instruction::new(
+                new_instructions.push(Rc::new(Instruction::new(
                     new_instr_id,
                     Operator::Phi(*left_instr_id, missing_side),
                     None,
-                ));
+                )));
 
                 new_identifier_map.insert(identifier_id, new_instr_id);
                 modified_identifiers.insert(identifier_id);
@@ -179,11 +174,11 @@ where
 
                 let missing_side = self.const_body.insert_returning_id(0);
 
-                new_instructions.push(Instruction::new(
+                new_instructions.push(Rc::new(Instruction::new(
                     new_instr_id,
                     Operator::Phi(missing_side, *right_instr_id),
                     None,
-                ));
+                )));
 
                 new_identifier_map.insert(identifier_id, new_instr_id);
                 modified_identifiers.insert(identifier_id);
@@ -214,6 +209,12 @@ where
             .as_ref()
             .unwrap()
             .get_identifier_map_copy();
+        let branch_block_dom_instr_map = self
+            .body
+            .get_mut_block(branch_block_id)
+            .as_ref()
+            .unwrap()
+            .get_dom_instr_map_copy();
 
         // Create new then block
         let then_block_id = self.body.insert_block(BasicBlock::from(
@@ -222,6 +223,7 @@ where
             ControlFlowEdge::Leaf,
             Some(branch_block_id),
             LinkedHashSet::new(),
+            branch_block_dom_instr_map.clone(),
         ));
         self.cur_block = then_block_id;
 
@@ -251,6 +253,7 @@ where
                 ControlFlowEdge::Leaf,
                 Some(branch_block_id),
                 LinkedHashSet::new(),
+                branch_block_dom_instr_map.clone(),
             ));
             self.cur_block = else_block_id;
 
@@ -259,7 +262,7 @@ where
             self.body
                 .get_mut_block(branch_block_id)
                 .unwrap()
-                .insert_instruction(Instruction::new(
+                .push_instr_no_dom(Instruction::new(
                     branch_instr_id,
                     Operator::Branch(
                         BranchOpcode::from(opposite_relop.clone()),
@@ -280,13 +283,14 @@ where
             ControlFlowEdge::Leaf,
             Some(branch_block_id),
             LinkedHashSet::new(),
+            branch_block_dom_instr_map,
         ));
 
         if !is_else {
             self.body
                 .get_mut_block(branch_block_id)
                 .unwrap()
-                .insert_instruction(Instruction::new(
+                .push_instr_no_dom(Instruction::new(
                     branch_instr_id,
                     Operator::Branch(
                         BranchOpcode::from(opposite_relop),
@@ -411,11 +415,37 @@ where
     ) -> InstructionId {
         let new_instr_id = self.body.get_instruction_count() as i32;
 
-        self.push_instruction(Instruction::new(
+        let operator_type = OperatorType::from(&operator);
+        let mut new_instr = Instruction::new(
             new_instr_id,
             Operator::StoredBinaryOp(operator, instr_id, instr_id2),
             None,
-        ));
+        );
+
+        if let Some(dom_instr) = self
+            .body
+            .get_mut_block(self.cur_block)
+            .unwrap()
+            .get_dom_instr(&operator_type)
+        {
+            if let Some(dup_instr_id) = dom_instr.check_dominators(&new_instr) {
+                return dup_instr_id;
+            }
+
+            let dom_instr = self
+                .body
+                .get_mut_block(self.cur_block)
+                .unwrap()
+                .remove_dom_instr(operator_type.clone())
+                .unwrap();
+
+            new_instr.update_dom(dom_instr);
+        }
+
+        self.body
+            .get_mut_block(self.cur_block)
+            .unwrap()
+            .push_instr(new_instr.clone(), operator_type);
 
         self.body.increment_instruction_count();
 
@@ -517,7 +547,7 @@ mod tests {
     use super::*;
 
     use pretty_assertions::assert_eq;
-    use std::collections::HashSet;
+    use std::{collections::HashSet, hash::Hash, rc::Rc};
 
     use crate::lexer::RelOp;
 
@@ -582,58 +612,74 @@ mod tests {
 
         let body = BodyParser::new(&mut tokens.into_iter().peekable(), &mut const_body).parse();
 
+        let b0_insr_1 = Rc::new(Instruction::new(
+            1,
+            Operator::StoredBinaryOp(StoredBinaryOpcode::Add, -1, -2),
+            None,
+        ));
+        let b0_insr_2 = Rc::new(Instruction::new(
+            2,
+            Operator::StoredBinaryOp(StoredBinaryOpcode::Add, 1, 0),
+            Some(b0_insr_1.clone()),
+        ));
+        let b0_insr_3 = Rc::new(Instruction::new(
+            3,
+            Operator::StoredBinaryOp(StoredBinaryOpcode::Sub, 2, -4),
+            None,
+        ));
+        let b0_insr_4 = Rc::new(Instruction::new(
+            4,
+            Operator::StoredBinaryOp(StoredBinaryOpcode::Mul, -3, -2),
+            None,
+        ));
+        let b0_insr_5 = Rc::new(Instruction::new(
+            5,
+            Operator::StoredBinaryOp(StoredBinaryOpcode::Div, 4, -1),
+            None,
+        ));
+        let b0_insr_6 = Rc::new(Instruction::new(
+            6,
+            Operator::StoredBinaryOp(StoredBinaryOpcode::Add, 3, 5),
+            Some(b0_insr_2.clone()),
+        ));
+        let b0_insr_7 = Rc::new(Instruction::new(
+            7,
+            Operator::StoredBinaryOp(StoredBinaryOpcode::Add, -1, 6),
+            Some(b0_insr_6.clone()),
+        ));
+        let b0_insr_8 = Rc::new(Instruction::new(
+            8,
+            Operator::StoredBinaryOp(StoredBinaryOpcode::Div, 7, -2),
+            Some(b0_insr_5.clone()),
+        ));
+        let b0_insr_9 = Rc::new(Instruction::new(
+            9,
+            Operator::StoredBinaryOp(StoredBinaryOpcode::Mul, -1, 8),
+            Some(b0_insr_4.clone()),
+        ));
+
         let main_block = BasicBlock::from(
             vec![
-                Instruction::new(
-                    1,
-                    Operator::StoredBinaryOp(StoredBinaryOpcode::Add, -1, -2),
-                    None,
-                ),
-                Instruction::new(
-                    2,
-                    Operator::StoredBinaryOp(StoredBinaryOpcode::Add, 1, 0),
-                    None,
-                ),
-                Instruction::new(
-                    3,
-                    Operator::StoredBinaryOp(StoredBinaryOpcode::Sub, 2, -4),
-                    None,
-                ),
-                Instruction::new(
-                    4,
-                    Operator::StoredBinaryOp(StoredBinaryOpcode::Mul, -3, -2),
-                    None,
-                ),
-                Instruction::new(
-                    5,
-                    Operator::StoredBinaryOp(StoredBinaryOpcode::Div, 4, -1),
-                    None,
-                ),
-                Instruction::new(
-                    6,
-                    Operator::StoredBinaryOp(StoredBinaryOpcode::Add, 3, 5),
-                    None,
-                ),
-                Instruction::new(
-                    7,
-                    Operator::StoredBinaryOp(StoredBinaryOpcode::Add, -1, 6),
-                    None,
-                ),
-                Instruction::new(
-                    8,
-                    Operator::StoredBinaryOp(StoredBinaryOpcode::Div, 7, -2),
-                    None,
-                ),
-                Instruction::new(
-                    9,
-                    Operator::StoredBinaryOp(StoredBinaryOpcode::Mul, -1, 8),
-                    None,
-                ),
+                b0_insr_1,
+                b0_insr_2,
+                b0_insr_3.clone(),
+                b0_insr_4,
+                b0_insr_5,
+                b0_insr_6,
+                b0_insr_7.clone(),
+                b0_insr_8.clone(),
+                b0_insr_9.clone(),
             ],
             HashMap::from([(1, -1), (2, 3), (3, 5), (4, 9)]),
             ControlFlowEdge::Leaf,
             None,
             LinkedHashSet::from_iter([1, 2, 3, 4]),
+            HashMap::from([
+                (OperatorType::Add, b0_insr_7),
+                (OperatorType::Mul, b0_insr_9),
+                (OperatorType::Div, b0_insr_8),
+                (OperatorType::Sub, b0_insr_3),
+            ]),
         );
         let expected_body = Body::from(0, vec![main_block], 10);
 
@@ -644,7 +690,372 @@ mod tests {
     }
 
     #[test]
-    fn simple_if_statement() {
+    fn simple_duplicate_assignment() {
+        /*
+        let x <- 1 + 3;
+        let y <- 1 + 3;
+        */
+
+        let tokens = [
+            Token::Let,
+            Token::Identifier(1),
+            Token::Assignment,
+            Token::Number(1),
+            Token::Add,
+            Token::Number(3),
+            Token::Semicolon,
+            Token::Let,
+            Token::Identifier(2),
+            Token::Assignment,
+            Token::Number(1),
+            Token::Add,
+            Token::Number(3),
+            Token::Semicolon,
+        ];
+        let mut const_body = ConstBody::new();
+
+        let body = BodyParser::new(
+            &mut tokens.map(|t| Ok(t)).into_iter().peekable(),
+            &mut const_body,
+        )
+        .parse();
+
+        let b0_insr_1 = Rc::new(Instruction::new(
+            1,
+            Operator::StoredBinaryOp(StoredBinaryOpcode::Add, -1, -3),
+            None,
+        ));
+
+        let main_block = BasicBlock::from(
+            vec![b0_insr_1.clone()],
+            HashMap::from([(1, 1), (2, 1)]),
+            ControlFlowEdge::Leaf,
+            None,
+            LinkedHashSet::from_iter([1, 2]),
+            HashMap::from([(OperatorType::Add, b0_insr_1)]),
+        );
+        let expected_body = Body::from(0, vec![main_block], 2);
+
+        let expected_const_body = ConstBody::from(HashSet::from([1, 3]));
+
+        assert_eq!(body, expected_body);
+        assert_eq!(const_body, expected_const_body);
+    }
+
+    #[test]
+    fn identifier_duplicate_assignment() {
+        /*
+        let x <- 1 + 3;
+        let y <- x + 3;
+        let a <- x + y;
+        let z <- x + 3;
+        */
+
+        let tokens = [
+            Token::Let,
+            Token::Identifier(1),
+            Token::Assignment,
+            Token::Number(1),
+            Token::Add,
+            Token::Number(3),
+            Token::Semicolon,
+            Token::Let,
+            Token::Identifier(2),
+            Token::Assignment,
+            Token::Identifier(1),
+            Token::Add,
+            Token::Number(3),
+            Token::Semicolon,
+            Token::Let,
+            Token::Identifier(3),
+            Token::Assignment,
+            Token::Identifier(1),
+            Token::Add,
+            Token::Identifier(2),
+            Token::Semicolon,
+            Token::Let,
+            Token::Identifier(4),
+            Token::Assignment,
+            Token::Identifier(1),
+            Token::Add,
+            Token::Number(3),
+            Token::Semicolon,
+        ];
+        let mut const_body = ConstBody::new();
+
+        let body = BodyParser::new(
+            &mut tokens.map(|t| Ok(t)).into_iter().peekable(),
+            &mut const_body,
+        )
+        .parse();
+
+        let b0_insr_1 = Rc::new(Instruction::new(
+            1,
+            Operator::StoredBinaryOp(StoredBinaryOpcode::Add, -1, -3),
+            None,
+        ));
+        let b0_insr_2 = Rc::new(Instruction::new(
+            2,
+            Operator::StoredBinaryOp(StoredBinaryOpcode::Add, 1, -3),
+            Some(b0_insr_1.clone()),
+        ));
+        let b0_insr_3 = Rc::new(Instruction::new(
+            3,
+            Operator::StoredBinaryOp(StoredBinaryOpcode::Add, 1, 2),
+            Some(b0_insr_2.clone()),
+        ));
+
+        let main_block = BasicBlock::from(
+            vec![b0_insr_1, b0_insr_2, b0_insr_3.clone()],
+            HashMap::from([(1, 1), (2, 2), (3, 3), (4, 2)]),
+            ControlFlowEdge::Leaf,
+            None,
+            LinkedHashSet::from_iter([1, 2, 3, 4]),
+            HashMap::from([(OperatorType::Add, b0_insr_3)]),
+        );
+        let expected_body = Body::from(0, vec![main_block], 4);
+
+        let expected_const_body = ConstBody::from(HashSet::from([1, 3]));
+
+        assert_eq!(body, expected_body);
+        assert_eq!(const_body, expected_const_body);
+    }
+
+    #[test]
+    fn simple_branch() {
+        /*
+        let x <- 1;
+        if x < 1 then
+            let x <- 2;
+        else
+            let x <- 4;
+        fi;
+        */
+        let tokens = [
+            Token::Let,
+            Token::Identifier(1),
+            Token::Assignment,
+            Token::Number(1),
+            Token::Semicolon,
+            Token::If,
+            Token::Identifier(1),
+            Token::RelOp(RelOp::Lt),
+            Token::Number(1),
+            Token::Then,
+            Token::Let,
+            Token::Identifier(1),
+            Token::Assignment,
+            Token::Number(2),
+            Token::Semicolon,
+            Token::Else,
+            Token::Let,
+            Token::Identifier(1),
+            Token::Assignment,
+            Token::Number(4),
+            Token::Semicolon,
+            Token::Fi,
+            Token::Semicolon,
+        ];
+
+        let mut const_body = ConstBody::new();
+
+        let body = BodyParser::new(
+            &mut tokens.map(|t| Ok(t)).into_iter().peekable(),
+            &mut const_body,
+        )
+        .parse();
+
+        let b0_insr_1 = Rc::new(Instruction::new(
+            1,
+            Operator::StoredBinaryOp(StoredBinaryOpcode::Cmp, -1, -1),
+            None,
+        ));
+        let b0_insr_2 = Rc::new(Instruction::new(
+            2,
+            Operator::Branch(BranchOpcode::Ge, 2, 1),
+            None,
+        ));
+
+        let main_block = BasicBlock::from(
+            vec![b0_insr_1.clone(), b0_insr_2],
+            HashMap::from([(1, -1)]),
+            ControlFlowEdge::Fallthrough(1),
+            None,
+            LinkedHashSet::from_iter([1]),
+            HashMap::from([(OperatorType::Cmp, b0_insr_1.clone())]),
+        );
+        let then_block = BasicBlock::from(
+            Vec::new(),
+            HashMap::from([(1, -2)]),
+            ControlFlowEdge::Branch(3),
+            Some(0),
+            LinkedHashSet::from_iter([1]),
+            HashMap::from([(OperatorType::Cmp, b0_insr_1.clone())]),
+        );
+        let else_block = BasicBlock::from(
+            Vec::new(),
+            HashMap::from([(1, -4)]),
+            ControlFlowEdge::Fallthrough(3),
+            Some(0),
+            LinkedHashSet::from_iter([1]),
+            HashMap::from([(OperatorType::Cmp, b0_insr_1.clone())]),
+        );
+        let join_block = BasicBlock::from(
+            vec![Rc::new(Instruction::new(3, Operator::Phi(-2, -4), None))],
+            HashMap::from([(1, 3)]),
+            ControlFlowEdge::Leaf,
+            Some(0),
+            LinkedHashSet::from_iter([1]),
+            HashMap::from([(OperatorType::Cmp, b0_insr_1)]),
+        );
+
+        let expected_body = Body::from(0, vec![main_block, then_block, else_block, join_block], 4);
+
+        let expected_const_body = ConstBody::from(HashSet::from([1, 2, 4]));
+
+        assert_eq!(body, expected_body);
+        assert_eq!(const_body, expected_const_body);
+    }
+
+    #[test]
+    fn simple_duplicate_branch() {
+        /*
+        let x <- 1 + 4;
+        if x < 1 then
+            let x <- 2 + 1;
+            let y <- 1 + 4;
+        else
+            let x <- 1 + 4;
+        fi;
+        */
+        let tokens = [
+            Token::Let,
+            Token::Identifier(1),
+            Token::Assignment,
+            Token::Number(1),
+            Token::Add,
+            Token::Number(4),
+            Token::Semicolon,
+            Token::If,
+            Token::Identifier(1),
+            Token::RelOp(RelOp::Lt),
+            Token::Number(1),
+            Token::Then,
+            Token::Let,
+            Token::Identifier(1),
+            Token::Assignment,
+            Token::Number(2),
+            Token::Add,
+            Token::Number(1),
+            Token::Semicolon,
+            Token::Let,
+            Token::Identifier(2),
+            Token::Assignment,
+            Token::Number(1),
+            Token::Add,
+            Token::Number(4),
+            Token::Semicolon,
+            Token::Else,
+            Token::Let,
+            Token::Identifier(1),
+            Token::Assignment,
+            Token::Number(1),
+            Token::Add,
+            Token::Number(4),
+            Token::Semicolon,
+            Token::Fi,
+            Token::Semicolon,
+        ];
+
+        let mut const_body = ConstBody::new();
+
+        let body = BodyParser::new(
+            &mut tokens.map(|t| Ok(t)).into_iter().peekable(),
+            &mut const_body,
+        )
+        .parse();
+
+        let b0_insr_1 = Rc::new(Instruction::new(
+            1,
+            Operator::StoredBinaryOp(StoredBinaryOpcode::Add, -1, -4),
+            None,
+        ));
+        let b0_insr_2 = Rc::new(Instruction::new(
+            2,
+            Operator::StoredBinaryOp(StoredBinaryOpcode::Cmp, 1, -1),
+            None,
+        ));
+        let b0_insr_3 = Rc::new(Instruction::new(
+            3,
+            Operator::Branch(BranchOpcode::Ge, 2, 2),
+            None,
+        ));
+
+        let main_block = BasicBlock::from(
+            vec![b0_insr_1.clone(), b0_insr_2.clone(), b0_insr_3],
+            HashMap::from([(1, 1)]),
+            ControlFlowEdge::Fallthrough(1),
+            None,
+            LinkedHashSet::from_iter([1]),
+            HashMap::from([
+                (OperatorType::Cmp, b0_insr_2.clone()),
+                (OperatorType::Add, b0_insr_1.clone()),
+            ]),
+        );
+
+        let b1_insr_1 = Rc::new(Instruction::new(
+            4,
+            Operator::StoredBinaryOp(StoredBinaryOpcode::Add, -2, -1),
+            Some(b0_insr_1.clone()),
+        ));
+
+        let then_block = BasicBlock::from(
+            vec![b1_insr_1.clone()],
+            HashMap::from([(1, 4), (2, 1)]),
+            ControlFlowEdge::Branch(3),
+            Some(0),
+            LinkedHashSet::from_iter([1, 2]),
+            HashMap::from([
+                (OperatorType::Cmp, b0_insr_2.clone()),
+                (OperatorType::Add, b1_insr_1),
+            ]),
+        );
+        let else_block = BasicBlock::from(
+            Vec::new(),
+            HashMap::from([(1, 1)]),
+            ControlFlowEdge::Fallthrough(3),
+            Some(0),
+            LinkedHashSet::new(),
+            HashMap::from([
+                (OperatorType::Cmp, b0_insr_2.clone()),
+                (OperatorType::Add, b0_insr_1.clone()),
+            ]),
+        );
+        let join_block = BasicBlock::from(
+            vec![
+                Rc::new(Instruction::new(5, Operator::Phi(4, 1), None)),
+                Rc::new(Instruction::new(6, Operator::Phi(1, 0), None)),
+            ],
+            HashMap::from([(1, 5), (2, 6)]),
+            ControlFlowEdge::Leaf,
+            Some(0),
+            LinkedHashSet::from_iter([1, 2]),
+            HashMap::from([
+                (OperatorType::Cmp, b0_insr_2.clone()),
+                (OperatorType::Add, b0_insr_1.clone()),
+            ]),
+        );
+
+        let expected_body = Body::from(0, vec![main_block, then_block, else_block, join_block], 7);
+
+        let expected_const_body = ConstBody::from(HashSet::from([0, 1, 2, 4]));
+
+        assert_eq!(body, expected_body);
+        assert_eq!(const_body, expected_const_body);
+    }
+
+    #[test]
+    fn new_identifiers_branch() {
         /*
         let x <- 1;
         if x < 1 then
@@ -692,19 +1103,24 @@ mod tests {
         )
         .parse();
 
+        let b0_insr_1 = Rc::new(Instruction::new(
+            1,
+            Operator::StoredBinaryOp(StoredBinaryOpcode::Cmp, -1, -1),
+            None,
+        ));
+        let b0_insr_2 = Rc::new(Instruction::new(
+            2,
+            Operator::Branch(BranchOpcode::Ge, 2, 1),
+            None,
+        ));
+
         let main_block = BasicBlock::from(
-            vec![
-                Instruction::new(
-                    1,
-                    Operator::StoredBinaryOp(StoredBinaryOpcode::Cmp, -1, -1),
-                    None,
-                ),
-                Instruction::new(2, Operator::Branch(BranchOpcode::Ge, 2, 1), None),
-            ],
+            vec![b0_insr_1.clone(), b0_insr_2],
             HashMap::from([(1, -1)]),
             ControlFlowEdge::Fallthrough(1),
             None,
             LinkedHashSet::from_iter([1]),
+            HashMap::from([(OperatorType::Cmp, b0_insr_1.clone())]),
         );
         let then_block = BasicBlock::from(
             Vec::new(),
@@ -712,6 +1128,7 @@ mod tests {
             ControlFlowEdge::Branch(3),
             Some(0),
             LinkedHashSet::from_iter([2, 3]),
+            HashMap::from([(OperatorType::Cmp, b0_insr_1.clone())]),
         );
         let else_block = BasicBlock::from(
             Vec::new(),
@@ -719,16 +1136,18 @@ mod tests {
             ControlFlowEdge::Fallthrough(3),
             Some(0),
             LinkedHashSet::from_iter([2]),
+            HashMap::from([(OperatorType::Cmp, b0_insr_1.clone())]),
         );
         let join_block = BasicBlock::from(
             vec![
-                Instruction::new(3, Operator::Phi(-2, -4), None),
-                Instruction::new(4, Operator::Phi(-13, 0), None),
+                Rc::new(Instruction::new(3, Operator::Phi(-2, -4), None)),
+                Rc::new(Instruction::new(4, Operator::Phi(-13, 0), None)),
             ],
             HashMap::from([(1, -1), (2, 3), (3, 4)]),
             ControlFlowEdge::Leaf,
             Some(0),
             LinkedHashSet::from_iter([2, 3]),
+            HashMap::from([(OperatorType::Cmp, b0_insr_1.clone())]),
         );
 
         let expected_body = Body::from(0, vec![main_block, then_block, else_block, join_block], 5);
@@ -740,7 +1159,7 @@ mod tests {
     }
 
     #[test]
-    fn simple_if_without_else_statement() {
+    fn branch_without_else_statement() {
         /*
         let x <- 1;
         if x == 1 then
@@ -774,19 +1193,24 @@ mod tests {
         )
         .parse();
 
+        let b0_insr_1 = Rc::new(Instruction::new(
+            1,
+            Operator::StoredBinaryOp(StoredBinaryOpcode::Cmp, -1, -1),
+            None,
+        ));
+        let b0_insr_2 = Rc::new(Instruction::new(
+            2,
+            Operator::Branch(BranchOpcode::Ne, 2, 1),
+            None,
+        ));
+
         let main_block = BasicBlock::from(
-            vec![
-                Instruction::new(
-                    1,
-                    Operator::StoredBinaryOp(StoredBinaryOpcode::Cmp, -1, -1),
-                    None,
-                ),
-                Instruction::new(2, Operator::Branch(BranchOpcode::Ne, 2, 1), None),
-            ],
+            vec![b0_insr_1.clone(), b0_insr_2],
             HashMap::from([(1, -1)]),
             ControlFlowEdge::Fallthrough(1),
             None,
             LinkedHashSet::from_iter([1]),
+            HashMap::from([(OperatorType::Cmp, b0_insr_1.clone())]),
         );
         let then_block = BasicBlock::from(
             Vec::new(),
@@ -794,13 +1218,15 @@ mod tests {
             ControlFlowEdge::Fallthrough(2),
             Some(0),
             LinkedHashSet::from_iter([1]),
+            HashMap::from([(OperatorType::Cmp, b0_insr_1.clone())]),
         );
         let join_block = BasicBlock::from(
-            vec![Instruction::new(3, Operator::Phi(-2, -1), None)],
+            vec![Rc::new(Instruction::new(3, Operator::Phi(-2, -1), None))],
             HashMap::from([(1, 3)]),
             ControlFlowEdge::Leaf,
             Some(0),
             LinkedHashSet::from_iter([1]),
+            HashMap::from([(OperatorType::Cmp, b0_insr_1.clone())]),
         );
 
         let expected_body = Body::from(0, vec![main_block, then_block, join_block], 4);
@@ -876,33 +1302,44 @@ mod tests {
         )
         .parse();
 
+        let b0_insr_1 = Rc::new(Instruction::new(
+            1,
+            Operator::StoredBinaryOp(StoredBinaryOpcode::Cmp, -1, -1),
+            None,
+        ));
+        let b0_insr_2 = Rc::new(Instruction::new(
+            2,
+            Operator::Branch(BranchOpcode::Le, 5, 1),
+            None,
+        ));
+
         let main_block = BasicBlock::from(
-            vec![
-                Instruction::new(
-                    1,
-                    Operator::StoredBinaryOp(StoredBinaryOpcode::Cmp, -1, -1),
-                    None,
-                ),
-                Instruction::new(2, Operator::Branch(BranchOpcode::Le, 5, 1), None),
-            ],
+            vec![b0_insr_1.clone(), b0_insr_2],
             HashMap::from([(1, -1)]),
             ControlFlowEdge::Fallthrough(1),
             None,
             LinkedHashSet::from_iter([1]),
+            HashMap::from([(OperatorType::Cmp, b0_insr_1.clone())]),
         );
+
+        let b1_insr_1 = Rc::new(Instruction::new(
+            3,
+            Operator::StoredBinaryOp(StoredBinaryOpcode::Cmp, -1, -3),
+            Some(b0_insr_1.clone()),
+        ));
+        let b1_insr_2 = Rc::new(Instruction::new(
+            4,
+            Operator::Branch(BranchOpcode::Ge, 3, 3),
+            None,
+        ));
+
         let then_block = BasicBlock::from(
-            vec![
-                Instruction::new(
-                    3,
-                    Operator::StoredBinaryOp(StoredBinaryOpcode::Cmp, -1, -3),
-                    None,
-                ),
-                Instruction::new(4, Operator::Branch(BranchOpcode::Ge, 3, 3), None),
-            ],
+            vec![b1_insr_1.clone(), b1_insr_2],
             HashMap::from([(1, -1)]),
             ControlFlowEdge::Fallthrough(2),
             Some(0),
             LinkedHashSet::new(),
+            HashMap::from([(OperatorType::Cmp, b1_insr_1.clone())]),
         );
         let sub_then_block = BasicBlock::from(
             Vec::new(),
@@ -910,6 +1347,7 @@ mod tests {
             ControlFlowEdge::Branch(4),
             Some(1),
             LinkedHashSet::from_iter([1]),
+            HashMap::from([(OperatorType::Cmp, b1_insr_1.clone())]),
         );
         let sub_else_block = BasicBlock::from(
             Vec::new(),
@@ -917,16 +1355,18 @@ mod tests {
             ControlFlowEdge::Fallthrough(4),
             Some(1),
             LinkedHashSet::from_iter([1, 2]),
+            HashMap::from([(OperatorType::Cmp, b1_insr_1.clone())]),
         );
         let sub_join_block = BasicBlock::from(
             vec![
-                Instruction::new(5, Operator::Phi(-3, -4), None),
-                Instruction::new(6, Operator::Phi(0, -12), None),
+                Rc::new(Instruction::new(5, Operator::Phi(-3, -4), None)),
+                Rc::new(Instruction::new(6, Operator::Phi(0, -12), None)),
             ],
             HashMap::from([(1, 5), (2, 6)]),
             ControlFlowEdge::Branch(6),
             Some(1),
             LinkedHashSet::from_iter([1, 2]),
+            HashMap::from([(OperatorType::Cmp, b1_insr_1.clone())]),
         );
         let else_block = BasicBlock::from(
             Vec::new(),
@@ -934,16 +1374,18 @@ mod tests {
             ControlFlowEdge::Fallthrough(6),
             Some(0),
             LinkedHashSet::from_iter([1]),
+            HashMap::from([(OperatorType::Cmp, b0_insr_1.clone())]),
         );
         let join_block = BasicBlock::from(
             vec![
-                Instruction::new(7, Operator::Phi(5, -5), None),
-                Instruction::new(8, Operator::Phi(6, 0), None),
+                Rc::new(Instruction::new(7, Operator::Phi(5, -5), None)),
+                Rc::new(Instruction::new(8, Operator::Phi(6, 0), None)),
             ],
             HashMap::from([(1, 7), (2, 8)]),
             ControlFlowEdge::Leaf,
             Some(0),
             LinkedHashSet::from_iter([1, 2]),
+            HashMap::from([(OperatorType::Cmp, b0_insr_1)]),
         );
 
         let expected_body = Body::from(

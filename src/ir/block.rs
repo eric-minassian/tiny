@@ -1,21 +1,24 @@
-use std::collections::HashMap;
+use std::{collections::HashMap, rc::Rc};
 
 use linked_hash_set::LinkedHashSet;
 
 use crate::lexer::IdentifierId;
 
-use super::{ssa::Instruction, InstructionId};
+use super::{
+    ssa::{Instruction, OperatorType},
+    InstructionId,
+};
 
 pub type BasicBlockId = usize;
 
-#[derive(Debug, PartialEq)]
-pub struct Body<'a> {
+#[derive(Debug, PartialEq, Clone)]
+pub struct Body {
     root: BasicBlockId,
-    blocks: Vec<BasicBlock<'a>>,
+    blocks: Vec<BasicBlock>,
     instruction_count: u32,
 }
 
-impl<'a> Body<'a> {
+impl Body {
     pub fn new() -> Self {
         Self {
             root: 0,
@@ -24,7 +27,7 @@ impl<'a> Body<'a> {
         }
     }
 
-    pub fn from(root: BasicBlockId, blocks: Vec<BasicBlock<'a>>, instruction_count: u32) -> Self {
+    pub fn from(root: BasicBlockId, blocks: Vec<BasicBlock>, instruction_count: u32) -> Self {
         Self {
             root,
             blocks,
@@ -44,27 +47,32 @@ impl<'a> Body<'a> {
         self.instruction_count += 1;
     }
 
-    pub fn insert_block(&mut self, block: BasicBlock<'a>) -> BasicBlockId {
+    pub fn insert_block(&mut self, block: BasicBlock) -> BasicBlockId {
         let id = self.blocks.len();
         self.blocks.push(block);
         id
     }
 
-    pub fn get_mut_block(&mut self, id: BasicBlockId) -> Option<&mut BasicBlock<'a>> {
+    pub fn get_mut_block(&mut self, id: BasicBlockId) -> Option<&mut BasicBlock> {
         self.blocks.get_mut(id)
+    }
+
+    pub fn get_block(&self, id: BasicBlockId) -> Option<&BasicBlock> {
+        self.blocks.get(id)
     }
 }
 
-#[derive(Debug, PartialEq)]
-pub struct BasicBlock<'a> {
-    instructions: Vec<Instruction<'a>>,
+#[derive(Debug, PartialEq, Clone)]
+pub struct BasicBlock {
+    instructions: Vec<Rc<Instruction>>,
     identifier_map: HashMap<IdentifierId, InstructionId>,
     edge: ControlFlowEdge,
     dominator: Option<BasicBlockId>,
     modified_identifiers: LinkedHashSet<IdentifierId>,
+    dom_instr_map: HashMap<OperatorType, Rc<Instruction>>,
 }
 
-impl<'a> BasicBlock<'a> {
+impl BasicBlock {
     pub fn new() -> Self {
         Self {
             instructions: Vec::new(),
@@ -72,15 +80,17 @@ impl<'a> BasicBlock<'a> {
             edge: ControlFlowEdge::Leaf,
             dominator: None,
             modified_identifiers: LinkedHashSet::new(),
+            dom_instr_map: HashMap::new(),
         }
     }
 
     pub fn from(
-        instructions: Vec<Instruction<'a>>,
+        instructions: Vec<Rc<Instruction>>,
         identifier_map: HashMap<IdentifierId, InstructionId>,
         edge: ControlFlowEdge,
         dominator: Option<BasicBlockId>,
         modified_identifiers: LinkedHashSet<IdentifierId>,
+        dom_instr_map: HashMap<OperatorType, Rc<Instruction>>,
     ) -> Self {
         Self {
             instructions,
@@ -88,10 +98,29 @@ impl<'a> BasicBlock<'a> {
             edge,
             identifier_map,
             modified_identifiers,
+            dom_instr_map,
         }
     }
 
-    pub fn update_instructions(&mut self, instructions: Vec<Instruction<'a>>) {
+    pub fn remove_dom_instr(&mut self, op_type: OperatorType) -> Option<Rc<Instruction>> {
+        self.dom_instr_map.remove(&op_type)
+    }
+
+    pub fn get_dom_instr(&self, op_type: &OperatorType) -> Option<&Rc<Instruction>> {
+        self.dom_instr_map.get(op_type)
+    }
+
+    pub fn push_instr(&mut self, instr: Instruction, op_type: OperatorType) {
+        let instr = Rc::new(instr);
+        self.instructions.push(instr.clone());
+        self.dom_instr_map.insert(op_type, instr);
+    }
+
+    pub fn push_instr_no_dom(&mut self, instr: Instruction) {
+        self.instructions.push(Rc::new(instr));
+    }
+
+    pub fn update_instructions(&mut self, instructions: Vec<Rc<Instruction>>) {
         self.instructions = instructions;
     }
 
@@ -106,17 +135,23 @@ impl<'a> BasicBlock<'a> {
         self.modified_identifiers = modified_identifiers;
     }
 
-    pub fn insert_instruction(&mut self, instruction: Instruction<'a>) {
-        self.instructions.push(instruction);
-    }
-
     pub fn get_identifier(&mut self, identifier: &IdentifierId) -> Option<&InstructionId> {
         self.identifier_map.get(identifier)
     }
 
     pub fn insert_identifier(&mut self, identifier: IdentifierId, instruction: InstructionId) {
+        // self.identifier_map.insert(identifier, instruction);
+        // self.modified_identifiers.insert(identifier);
+
+        if let Some(instr) = self.identifier_map.get(&identifier) {
+            if *instr != instruction {
+                self.modified_identifiers.insert(identifier);
+            }
+        } else {
+            self.modified_identifiers.insert(identifier);
+        }
+
         self.identifier_map.insert(identifier, instruction);
-        self.modified_identifiers.insert(identifier);
     }
 
     pub fn update_dominator(&mut self, dom: BasicBlockId) {
@@ -129,6 +164,10 @@ impl<'a> BasicBlock<'a> {
 
     pub fn get_identifier_map_copy(&self) -> HashMap<IdentifierId, InstructionId> {
         self.identifier_map.clone()
+    }
+
+    pub fn get_dom_instr_map_copy(&self) -> HashMap<OperatorType, Rc<Instruction>> {
+        self.dom_instr_map.clone()
     }
 
     pub fn get_modified_identifiers(&self) -> &LinkedHashSet<IdentifierId> {

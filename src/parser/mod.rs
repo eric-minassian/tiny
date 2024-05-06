@@ -28,7 +28,7 @@ where
 
 pub struct Parser<'a> {
     tokens: Peekable<Tokenizer<'a>>,
-    store: IrStore<'a>,
+    store: IrStore,
     const_body: ConstBody,
 }
 
