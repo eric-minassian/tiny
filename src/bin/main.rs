@@ -1,6 +1,6 @@
 use std::{env, fs, process};
 
-use compiler::lexer::Tokenizer;
+use tiny::lexer::Tokenizer;
 
 fn main() {
     let args = env::args().collect::<Vec<String>>();
