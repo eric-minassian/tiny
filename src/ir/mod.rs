@@ -7,27 +7,27 @@ use crate::lexer::Number;
 
 use self::{block::Body, ssa::InstructionId};
 
-#[derive(Debug, PartialEq)]
-pub struct IrStore<'a> {
-    bodies: HashMap<String, Body<'a>>,
+#[derive(Debug, PartialEq, Clone)]
+pub struct IrStore {
+    bodies: HashMap<String, Body>,
 }
 
-impl<'a> IrStore<'a> {
+impl IrStore {
     pub fn new() -> Self {
         Self {
             bodies: HashMap::new(),
         }
     }
 
-    pub fn from(bodies: HashMap<String, Body<'a>>) -> Self {
+    pub fn from(bodies: HashMap<String, Body>) -> Self {
         Self { bodies }
     }
 
-    pub fn insert(&mut self, name: String, body: Body<'a>) {
+    pub fn insert(&mut self, name: String, body: Body) {
         self.bodies.insert(name, body);
     }
 
-    pub fn get_mut_body(&mut self, name: &str) -> Option<&mut Body<'a>> {
+    pub fn get_mut_body(&mut self, name: &str) -> Option<&mut Body> {
         self.bodies.get_mut(name)
     }
 }
