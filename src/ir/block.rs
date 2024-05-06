@@ -140,8 +140,18 @@ impl BasicBlock {
     }
 
     pub fn insert_identifier(&mut self, identifier: IdentifierId, instruction: InstructionId) {
+        // self.identifier_map.insert(identifier, instruction);
+        // self.modified_identifiers.insert(identifier);
+
+        if let Some(instr) = self.identifier_map.get(&identifier) {
+            if *instr != instruction {
+                self.modified_identifiers.insert(identifier);
+            }
+        } else {
+            self.modified_identifiers.insert(identifier);
+        }
+
         self.identifier_map.insert(identifier, instruction);
-        self.modified_identifiers.insert(identifier);
     }
 
     pub fn update_dominator(&mut self, dom: BasicBlockId) {
