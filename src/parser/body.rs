@@ -30,7 +30,14 @@ impl<'a, T> BodyParser<'a, T>
 where
     T: Iterator<Item = Result<Token>>,
 {
-    pub fn new(tokens: &'a mut Peekable<T>, const_body: &'a mut ConstBody) -> Self {
+    pub fn parse(tokens: &'a mut Peekable<T>, const_body: &'a mut ConstBody) -> Body {
+        let mut body_parser = Self::new(tokens, const_body);
+        body_parser.stat_sequence().unwrap();
+
+        body_parser.body
+    }
+
+    fn new(tokens: &'a mut Peekable<T>, const_body: &'a mut ConstBody) -> Self {
         let body = Body::new();
 
         Self {
@@ -39,13 +46,6 @@ where
             cur_block: body.get_root(),
             body,
         }
-    }
-
-    pub fn parse(self) -> Body {
-        let mut parser = self;
-        parser.stat_sequence().unwrap();
-
-        parser.body
     }
 
     pub fn get_block_mut(&mut self, id: BasicBlockId) -> &mut BasicBlock {
@@ -584,7 +584,7 @@ mod tests {
         ];
         let mut const_body = ConstBody::new();
 
-        let body = BodyParser::new(&mut tokens.into_iter().peekable(), &mut const_body).parse();
+        let body = BodyParser::parse(&mut tokens.into_iter().peekable(), &mut const_body);
 
         let b0_insr_1 = Rc::new(Instruction::new(
             1,
@@ -688,11 +688,10 @@ mod tests {
         ];
         let mut const_body = ConstBody::new();
 
-        let body = BodyParser::new(
+        let body = BodyParser::parse(
             &mut tokens.map(|t| Ok(t)).into_iter().peekable(),
             &mut const_body,
-        )
-        .parse();
+        );
 
         let b0_insr_1 = Rc::new(Instruction::new(
             1,
@@ -757,11 +756,10 @@ mod tests {
         ];
         let mut const_body = ConstBody::new();
 
-        let body = BodyParser::new(
+        let body = BodyParser::parse(
             &mut tokens.map(|t| Ok(t)).into_iter().peekable(),
             &mut const_body,
-        )
-        .parse();
+        );
 
         let b0_insr_1 = Rc::new(Instruction::new(
             1,
@@ -833,11 +831,10 @@ mod tests {
 
         let mut const_body = ConstBody::new();
 
-        let body = BodyParser::new(
+        let body = BodyParser::parse(
             &mut tokens.map(|t| Ok(t)).into_iter().peekable(),
             &mut const_body,
-        )
-        .parse();
+        );
 
         let b0_insr_1 = Rc::new(Instruction::new(
             1,
@@ -943,11 +940,10 @@ mod tests {
 
         let mut const_body = ConstBody::new();
 
-        let body = BodyParser::new(
+        let body = BodyParser::parse(
             &mut tokens.map(|t| Ok(t)).into_iter().peekable(),
             &mut const_body,
-        )
-        .parse();
+        );
 
         let b0_insr_1 = Rc::new(Instruction::new(
             1,
@@ -1071,11 +1067,10 @@ mod tests {
 
         let mut const_body = ConstBody::new();
 
-        let body = BodyParser::new(
+        let body = BodyParser::parse(
             &mut tokens.map(|t| Ok(t)).into_iter().peekable(),
             &mut const_body,
-        )
-        .parse();
+        );
 
         let b0_insr_1 = Rc::new(Instruction::new(
             1,
@@ -1161,11 +1156,10 @@ mod tests {
 
         let mut const_body = ConstBody::new();
 
-        let body = BodyParser::new(
+        let body = BodyParser::parse(
             &mut tokens.map(|t| Ok(t)).into_iter().peekable(),
             &mut const_body,
-        )
-        .parse();
+        );
 
         let b0_insr_1 = Rc::new(Instruction::new(
             1,
@@ -1270,11 +1264,10 @@ mod tests {
 
         let mut const_body = ConstBody::new();
 
-        let body = BodyParser::new(
+        let body = BodyParser::parse(
             &mut tokens.map(|t| Ok(t)).into_iter().peekable(),
             &mut const_body,
-        )
-        .parse();
+        );
 
         let b0_insr_1 = Rc::new(Instruction::new(
             1,
