@@ -26,8 +26,7 @@ pub enum PhiSide {
 
 pub struct PhiBlock {
     pub side: PhiSide,
-    // Use BTreeMap to ensure deterministic order
-    pub phi_map: BTreeMap<IdentifierId, PhiValues>,
+    pub phi_map: BTreeMap<IdentifierId, PhiValues>, // Use BTreeMap to ensure deterministic order
 }
 
 impl PhiBlock {
@@ -134,18 +133,19 @@ where
     }
 
     fn while_statement(&mut self) -> Result<()> {
-        // self.match_token(Token::While, "Expected 'while' keyword")?;
+        self.match_token(Token::While)?;
 
-        // let _ = self.relation()?;
+        let (comparator_instruction_id, opposite_relop) = self.relation()?;
 
-        // self.match_token(Token::Do, "Expected 'do' keyword")?;
+        self.match_token(Token::Do)?;
 
-        // let _ = self.stat_sequence()?;
+        self.join_blocks.push(PhiBlock::new());
 
-        // self.match_token(Token::Od, "Expected 'od' keyword")?;
+        self.stat_sequence()?;
 
-        // Ok(())
-        todo!()
+        self.match_token(Token::Od)?;
+
+        Ok(())
     }
 
     fn if_statement(&mut self) -> Result<()> {
@@ -1385,6 +1385,103 @@ mod tests {
         );
 
         let expected_const_body = ConstBody::from(HashSet::from([0, 1, 3, 4, 5, 12]));
+
+        assert_eq!(body, expected_body);
+        assert_eq!(const_body, expected_const_body);
+    }
+
+    #[test]
+    fn simple_while_loop() {
+        /*
+        let x <- 1;
+        while x < 3 do
+            let x <- x + 1;
+        od
+        */
+        let tokens = [
+            Token::Let,
+            Token::Identifier(1),
+            Token::Assignment,
+            Token::Number(1),
+            Token::Semicolon,
+            Token::While,
+            Token::Identifier(1),
+            Token::RelOp(RelOp::Lt),
+            Token::Number(3),
+            Token::Do,
+            Token::Let,
+            Token::Identifier(1),
+            Token::Assignment,
+            Token::Identifier(1),
+            Token::Add,
+            Token::Number(1),
+            Token::Semicolon,
+            Token::Od,
+        ];
+
+        let mut const_body = ConstBody::new();
+
+        let body = BodyParser::parse(
+            &mut tokens.map(|t| Ok(t)).into_iter().peekable(),
+            &mut const_body,
+        );
+
+        // Block 0
+        let main_block = BasicBlock::from(
+            Vec::new(),
+            HashMap::from([(1, -1)]),
+            ControlFlowEdge::Fallthrough(1),
+            None,
+            HashMap::new(),
+        );
+
+        // Block 1
+        let b1_insr_1 = Rc::new(Instruction::new(
+            5,
+            Operator::StoredBinaryOp(StoredBinaryOpcode::Phi, -1, 3),
+            None,
+        ));
+        let b1_insr_2 = Rc::new(Instruction::new(
+            1,
+            Operator::StoredBinaryOp(StoredBinaryOpcode::Cmp, 5, -3),
+            None,
+        ));
+        let b1_insr_3 = Rc::new(Instruction::new(
+            2,
+            Operator::Branch(BranchOpcode::Ge, 3, 1),
+            None,
+        ));
+
+        let join_block = BasicBlock::from(
+            vec![b1_insr_1, b1_insr_2.clone(), b1_insr_3],
+            HashMap::from([(1, 5)]),
+            ControlFlowEdge::Fallthrough(2),
+            Some(0),
+            HashMap::from([(OperatorType::Cmp, b1_insr_2.clone())]),
+        );
+
+        // Block 2
+        let b2_insr_1 = Rc::new(Instruction::new(
+            3,
+            Operator::StoredBinaryOp(StoredBinaryOpcode::Add, 5, -1),
+            None,
+        ));
+        let b2_insr_2 = Rc::new(Instruction::new(4, Operator::UnconditionalBranch(1), None));
+
+        let body_block = BasicBlock::from(
+            vec![b2_insr_1.clone(), b2_insr_2],
+            HashMap::from([(1, 3)]),
+            ControlFlowEdge::Branch(1),
+            Some(1),
+            HashMap::from([
+                (OperatorType::Cmp, b1_insr_2),
+                (OperatorType::Add, b2_insr_1),
+            ]),
+        );
+
+        let expected_body = Body::from(0, vec![main_block, join_block, body_block], 6);
+
+        let expected_const_body = ConstBody::from(HashSet::from([1, 2]));
 
         assert_eq!(body, expected_body);
         assert_eq!(const_body, expected_const_body);
