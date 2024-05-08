@@ -1,7 +1,5 @@
 use std::{collections::HashMap, rc::Rc};
 
-use linked_hash_set::LinkedHashSet;
-
 use crate::lexer::IdentifierId;
 
 use super::{
@@ -15,7 +13,7 @@ pub type BasicBlockId = usize;
 pub struct Body {
     root: BasicBlockId,
     blocks: Vec<BasicBlock>,
-    instruction_count: u32,
+    next_instr_id: u32,
 }
 
 impl Body {
@@ -23,7 +21,7 @@ impl Body {
         Self {
             root: 0,
             blocks: vec![BasicBlock::new()],
-            instruction_count: 1,
+            next_instr_id: 1,
         }
     }
 
@@ -31,7 +29,7 @@ impl Body {
         Self {
             root,
             blocks,
-            instruction_count,
+            next_instr_id: instruction_count,
         }
     }
 
@@ -40,11 +38,11 @@ impl Body {
     }
 
     pub fn get_instruction_count(&self) -> u32 {
-        self.instruction_count
+        self.next_instr_id
     }
 
     pub fn increment_instruction_count(&mut self) {
-        self.instruction_count += 1;
+        self.next_instr_id += 1;
     }
 
     pub fn insert_block(&mut self, block: BasicBlock) -> BasicBlockId {
@@ -68,7 +66,6 @@ pub struct BasicBlock {
     identifier_map: HashMap<IdentifierId, InstructionId>,
     edge: ControlFlowEdge,
     dominator: Option<BasicBlockId>,
-    modified_identifiers: LinkedHashSet<IdentifierId>,
     dom_instr_map: HashMap<OperatorType, Rc<Instruction>>,
 }
 
@@ -79,7 +76,6 @@ impl BasicBlock {
             identifier_map: HashMap::new(),
             edge: ControlFlowEdge::Leaf,
             dominator: None,
-            modified_identifiers: LinkedHashSet::new(),
             dom_instr_map: HashMap::new(),
         }
     }
@@ -89,7 +85,6 @@ impl BasicBlock {
         identifier_map: HashMap<IdentifierId, InstructionId>,
         edge: ControlFlowEdge,
         dominator: Option<BasicBlockId>,
-        modified_identifiers: LinkedHashSet<IdentifierId>,
         dom_instr_map: HashMap<OperatorType, Rc<Instruction>>,
     ) -> Self {
         Self {
@@ -97,7 +92,6 @@ impl BasicBlock {
             dominator,
             edge,
             identifier_map,
-            modified_identifiers,
             dom_instr_map,
         }
     }
@@ -120,6 +114,13 @@ impl BasicBlock {
         self.instructions.push(Rc::new(instr));
     }
 
+    pub fn push_phi_instr(&mut self, instr: Instruction) {
+        println!("Pushing phi instr: {:?}", instr);
+        println!("Length of instructions: {:?}", self.instructions.len());
+        self.instructions
+            .insert(self.instructions.len() - 2, Rc::new(instr));
+    }
+
     pub fn update_instructions(&mut self, instructions: Vec<Rc<Instruction>>) {
         self.instructions = instructions;
     }
@@ -128,29 +129,11 @@ impl BasicBlock {
         self.identifier_map = identifier_map
     }
 
-    pub fn update_modified_identifiers(
-        &mut self,
-        modified_identifiers: LinkedHashSet<IdentifierId>,
-    ) {
-        self.modified_identifiers = modified_identifiers;
-    }
-
     pub fn get_identifier(&mut self, identifier: &IdentifierId) -> Option<&InstructionId> {
         self.identifier_map.get(identifier)
     }
 
     pub fn insert_identifier(&mut self, identifier: IdentifierId, instruction: InstructionId) {
-        // self.identifier_map.insert(identifier, instruction);
-        // self.modified_identifiers.insert(identifier);
-
-        if let Some(instr) = self.identifier_map.get(&identifier) {
-            if *instr != instruction {
-                self.modified_identifiers.insert(identifier);
-            }
-        } else {
-            self.modified_identifiers.insert(identifier);
-        }
-
         self.identifier_map.insert(identifier, instruction);
     }
 
@@ -169,10 +152,6 @@ impl BasicBlock {
     pub fn get_dom_instr_map_copy(&self) -> HashMap<OperatorType, Rc<Instruction>> {
         self.dom_instr_map.clone()
     }
-
-    pub fn get_modified_identifiers(&self) -> &LinkedHashSet<IdentifierId> {
-        &self.modified_identifiers
-    }
 }
 
 #[derive(Debug, PartialEq, Clone)]
@@ -180,6 +159,4 @@ pub enum ControlFlowEdge {
     Leaf,
     Fallthrough(BasicBlockId),
     Branch(BasicBlockId),
-    IfStmt(BasicBlockId, Option<BasicBlockId>, BasicBlockId),
-    Loop(BasicBlockId, BasicBlockId),
 }

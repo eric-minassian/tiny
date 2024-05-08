@@ -58,7 +58,7 @@ impl<'a> Parser<'a> {
 
         self.match_token(Token::LBrack)?;
 
-        let main_body = BodyParser::new(&mut self.tokens, &mut self.const_body).parse();
+        let main_body = BodyParser::parse(&mut self.tokens, &mut self.const_body);
 
         self.store.insert("main".to_string(), main_body);
 

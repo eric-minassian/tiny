@@ -1,6 +1,4 @@
-use std::{collections::HashMap, iter::Peekable, rc::Rc};
-
-use linked_hash_set::LinkedHashSet;
+use std::{collections::BTreeMap, iter::Peekable};
 
 use crate::{
     error::{Error, Result},
@@ -11,10 +9,35 @@ use crate::{
         },
         ConstBody,
     },
-    lexer::{RelOp, Token},
+    lexer::{IdentifierId, RelOp, Token},
 };
 
 use super::match_token;
+
+pub struct PhiValues {
+    pub left_identifier_id: Option<i32>,
+    pub right_identifier_id: Option<i32>,
+}
+
+pub enum PhiSide {
+    Left,
+    Right,
+}
+
+pub struct PhiBlock {
+    pub side: PhiSide,
+    // Use BTreeMap to ensure deterministic order
+    pub phi_map: BTreeMap<IdentifierId, PhiValues>,
+}
+
+impl PhiBlock {
+    pub fn new() -> Self {
+        Self {
+            side: PhiSide::Left,
+            phi_map: BTreeMap::new(),
+        }
+    }
+}
 
 pub struct BodyParser<'a, T>
 where
@@ -24,13 +47,21 @@ where
     const_body: &'a mut ConstBody,
     body: Body,
     cur_block: BasicBlockId,
+    join_blocks: Vec<PhiBlock>,
 }
 
 impl<'a, T> BodyParser<'a, T>
 where
     T: Iterator<Item = Result<Token>>,
 {
-    pub fn new(tokens: &'a mut Peekable<T>, const_body: &'a mut ConstBody) -> Self {
+    pub fn parse(tokens: &'a mut Peekable<T>, const_body: &'a mut ConstBody) -> Body {
+        let mut body_parser = Self::new(tokens, const_body);
+        body_parser.stat_sequence().unwrap();
+
+        body_parser.body
+    }
+
+    fn new(tokens: &'a mut Peekable<T>, const_body: &'a mut ConstBody) -> Self {
         let body = Body::new();
 
         Self {
@@ -38,14 +69,8 @@ where
             const_body,
             cur_block: body.get_root(),
             body,
+            join_blocks: Vec::new(),
         }
-    }
-
-    pub fn parse(self) -> Body {
-        let mut parser = self;
-        parser.stat_sequence().unwrap();
-
-        parser.body
     }
 
     pub fn get_block_mut(&mut self, id: BasicBlockId) -> &mut BasicBlock {
@@ -123,165 +148,81 @@ where
         todo!()
     }
 
-    fn get_and_set_phi(&mut self, left_block_id: BasicBlockId, right_block_id: BasicBlockId) {
-        // Retrieve mutable references to the left block and clone the modified identifiers and identifier map
-        let left_block = self.get_block_mut(left_block_id);
-        let left_modified_identifiers = left_block.get_modified_identifiers().clone();
-        let left_identifier_map = left_block.get_identifier_map().clone();
-
-        // Retrieve mutable references to the right block and clone the modified identifiers and identifier map
-        let right_block = self.get_block_mut(right_block_id);
-        let right_modified_identifiers = right_block.get_modified_identifiers().clone();
-        let right_identifier_map = right_block.get_identifier_map().clone();
-
-        // Initialize new structures for the upcoming phi nodes
-        let mut new_identifier_map = HashMap::from(left_identifier_map.clone());
-        let mut new_instructions = Vec::new();
-        let mut modified_identifiers = LinkedHashSet::new();
-
-        // Determine identifiers that are modified in either block
-        let unified_mods = left_modified_identifiers
-            .union(&right_modified_identifiers)
-            .cloned();
-
-        for id in unified_mods {
-            let left_instr_id = left_identifier_map.get(&id);
-            let right_instr_id = right_identifier_map.get(&id);
-
-            // Check if the identifier is modified in both blocks
-            if let (Some(&left_instr_id), Some(&right_instr_id)) = (left_instr_id, right_instr_id) {
-                let new_instr_id = self.body.get_instruction_count() as i32;
-                self.body.increment_instruction_count();
-
-                new_instructions.push(Rc::new(Instruction::new(
-                    new_instr_id,
-                    Operator::Phi(left_instr_id, right_instr_id),
-                    None,
-                )));
-
-                new_identifier_map.insert(id, new_instr_id);
-                modified_identifiers.insert(id);
-
-            // Handle cases where an identifier is modified in only one of the blocks
-            } else if let Some(&instr_id) = left_instr_id.or(right_instr_id) {
-                let new_instr_id = self.body.get_instruction_count() as i32;
-                self.body.increment_instruction_count();
-
-                let missing_side = self.const_body.insert_returning_id(0);
-                let phi_operator = if left_instr_id.is_some() {
-                    Operator::Phi(instr_id, missing_side)
-                } else {
-                    Operator::Phi(missing_side, instr_id)
-                };
-
-                new_instructions.push(Rc::new(Instruction::new(new_instr_id, phi_operator, None)));
-
-                new_identifier_map.insert(id, new_instr_id);
-                modified_identifiers.insert(id);
-            }
-        }
-
-        let block = self.get_block_mut(self.cur_block);
-
-        block.update_identifier_map(new_identifier_map);
-        block.update_instructions(new_instructions);
-        block.update_modified_identifiers(modified_identifiers);
-    }
-
     fn if_statement(&mut self) -> Result<()> {
-        // Ensure the next token is 'if' and consume it
         self.match_token(Token::If)?;
 
-        // Evaluate the condition and get the comparator and opposite relational operator
         let (comparator_instruction_id, opposite_relop) = self.relation()?;
 
-        // Ensure the next token is 'then' and consume it
         self.match_token(Token::Then)?;
 
-        // Setup for branch instruction
-        let current_branch_block_id = self.cur_block;
+        let branch_block_id = self.cur_block;
         let branch_instruction_id = self.body.get_instruction_count() as i32;
         self.body.increment_instruction_count();
         let identifier_map_copy = self
-            .get_block_mut(current_branch_block_id)
+            .get_block_mut(branch_block_id)
             .get_identifier_map()
             .clone();
-        let dominance_instruction_map_copy = self
-            .get_block_mut(current_branch_block_id)
-            .get_dom_instr_map_copy();
+        let dominance_instruction_map_copy =
+            self.get_block_mut(branch_block_id).get_dom_instr_map_copy();
 
-        // Create a new block for the 'then' branch
+        self.join_blocks.push(PhiBlock::new());
+
         let then_block_id = self.body.insert_block(BasicBlock::from(
             Vec::new(),
             identifier_map_copy.clone(),
             ControlFlowEdge::Leaf,
-            Some(current_branch_block_id),
-            LinkedHashSet::new(),
+            Some(branch_block_id),
             dominance_instruction_map_copy.clone(),
         ));
-        self.cur_block = then_block_id;
 
-        // Update the control flow from the current block to the 'then' block
-        self.get_block_mut(current_branch_block_id)
+        self.get_block_mut(branch_block_id)
             .update_edge(ControlFlowEdge::Fallthrough(then_block_id));
 
-        // Process the statement sequence in the 'then' block
+        self.cur_block = then_block_id;
         self.stat_sequence()?;
         let then_block_end_id = self.cur_block;
 
-        // Check if an 'else' branch is present
+        println!("Then Block End: {}", then_block_end_id);
+
         let is_else_present = matches!(
             self.tokens
                 .peek()
                 .ok_or_else(|| Error::UnexpectedEndOfFile)?,
             Ok(Token::Else)
         );
+
         if is_else_present {
             self.tokens.next();
 
-            // Create a new block for the 'else' branch
+            self.join_blocks.last_mut().unwrap().side = PhiSide::Right;
+
             let else_block_id = self.body.insert_block(BasicBlock::from(
                 Vec::new(),
-                identifier_map_copy,
+                identifier_map_copy.clone(),
                 ControlFlowEdge::Leaf,
-                Some(current_branch_block_id),
-                LinkedHashSet::new(),
+                Some(branch_block_id),
                 dominance_instruction_map_copy.clone(),
             ));
+
             self.cur_block = else_block_id;
-
-            // Process the statement sequence in the 'else' block
             self.stat_sequence()?;
-
-            // Add branch instruction to jump from the 'if' condition directly to the 'else' block
-            self.get_block_mut(current_branch_block_id)
-                .push_instr_no_dom(Instruction::new(
-                    branch_instruction_id,
-                    Operator::Branch(
-                        BranchOpcode::from(opposite_relop.clone()),
-                        else_block_id,
-                        comparator_instruction_id,
-                    ),
-                    None,
-                ));
         }
 
-        let else_block_end_id = self.cur_block;
-
-        // Ensure the next token is 'fi' (end of if statement) and consume it
         self.match_token(Token::Fi)?;
 
-        // Create a join block to consolidate the flow from 'then' and 'else'
         let join_block_id = self.body.insert_block(BasicBlock::from(
             Vec::new(),
-            HashMap::new(),
+            identifier_map_copy.clone(),
             ControlFlowEdge::Leaf,
-            Some(current_branch_block_id),
-            LinkedHashSet::new(),
-            dominance_instruction_map_copy,
+            Some(branch_block_id),
+            dominance_instruction_map_copy.clone(),
         ));
 
-        // Update control flow for the 'then' block to the join block
+        if is_else_present {
+            self.get_block_mut(self.cur_block)
+                .update_edge(ControlFlowEdge::Fallthrough(join_block_id));
+        }
+
         self.get_block_mut(then_block_end_id)
             .update_edge(if is_else_present {
                 ControlFlowEdge::Branch(join_block_id)
@@ -289,29 +230,80 @@ where
                 ControlFlowEdge::Fallthrough(join_block_id)
             });
 
-        // Update current block to the join block
+        let else_block_end_id = self.cur_block;
+
+        self.get_block_mut(branch_block_id)
+            .push_instr_no_dom(Instruction::new(
+                branch_instruction_id,
+                Operator::Branch(
+                    BranchOpcode::from(opposite_relop),
+                    if is_else_present {
+                        else_block_end_id
+                    } else {
+                        join_block_id
+                    },
+                    comparator_instruction_id,
+                ),
+                None,
+            ));
+
         self.cur_block = join_block_id;
 
-        // If there was an 'else' block, update its control flow to the join block
-        if is_else_present {
-            self.get_block_mut(else_block_end_id)
-                .update_edge(ControlFlowEdge::Fallthrough(join_block_id));
-            self.get_and_set_phi(then_block_end_id, else_block_end_id);
-        } else {
-            // Add a branch instruction to jump from the 'if' condition directly to the join block
-            self.get_block_mut(current_branch_block_id)
-                .push_instr_no_dom(Instruction::new(
-                    branch_instruction_id,
-                    Operator::Branch(
-                        BranchOpcode::from(opposite_relop),
-                        join_block_id,
-                        comparator_instruction_id,
-                    ),
-                    None,
-                ));
+        let phi_node = self.join_blocks.pop().unwrap();
 
-            self.get_and_set_phi(then_block_end_id, current_branch_block_id);
+        for (id, temp_phi) in phi_node.phi_map.into_iter() {
+            let new_instr_id = self.body.get_instruction_count() as i32;
+            self.body.increment_instruction_count();
+
+            let default_value = *identifier_map_copy.get(&id).unwrap_or(&0);
+
+            // Temporary: Integrate better into handling of 0 values
+            if default_value == 0
+                && (temp_phi.left_identifier_id.is_none() || temp_phi.right_identifier_id.is_none())
+            {
+                self.const_body.insert_returning_id(0);
+            }
+
+            let operator = Operator::Phi(
+                temp_phi.left_identifier_id.unwrap_or(default_value),
+                temp_phi.right_identifier_id.unwrap_or(default_value),
+            );
+
+            let new_instr = Instruction::new(new_instr_id, operator, None);
+
+            let block = self.get_block_mut(join_block_id);
+
+            block.push_instr_no_dom(new_instr);
+            block.insert_identifier(id, new_instr_id);
+
+            for phi_node_temp in self.join_blocks.iter_mut() {
+                if let Some(temp_phi) = phi_node_temp.phi_map.get_mut(&id) {
+                    match phi_node_temp.side {
+                        PhiSide::Left => {
+                            temp_phi.left_identifier_id = Some(new_instr_id);
+                        }
+                        PhiSide::Right => {
+                            temp_phi.right_identifier_id = Some(new_instr_id);
+                        }
+                    }
+                } else {
+                    phi_node_temp.phi_map.insert(
+                        id,
+                        match phi_node_temp.side {
+                            PhiSide::Left => PhiValues {
+                                left_identifier_id: Some(new_instr_id),
+                                right_identifier_id: None,
+                            },
+                            PhiSide::Right => PhiValues {
+                                left_identifier_id: None,
+                                right_identifier_id: Some(new_instr_id),
+                            },
+                        },
+                    );
+                }
+            }
         }
+
         Ok(())
     }
 
@@ -361,6 +353,26 @@ where
 
                 self.get_block_mut(self.cur_block)
                     .insert_identifier(identifier_id, instruction_id);
+
+                if let Some(phi_node) = self.join_blocks.last_mut() {
+                    let temp_phi =
+                        phi_node
+                            .phi_map
+                            .entry(identifier_id)
+                            .or_insert_with(|| PhiValues {
+                                left_identifier_id: None,
+                                right_identifier_id: None,
+                            });
+
+                    match phi_node.side {
+                        PhiSide::Left => {
+                            temp_phi.left_identifier_id = Some(instruction_id);
+                        }
+                        PhiSide::Right => {
+                            temp_phi.right_identifier_id = Some(instruction_id);
+                        }
+                    }
+                }
 
                 Ok(())
             }
@@ -521,7 +533,11 @@ mod tests {
     use super::*;
 
     use pretty_assertions::assert_eq;
-    use std::{collections::HashSet, hash::Hash, rc::Rc};
+    use std::{
+        collections::{HashMap, HashSet},
+        hash::Hash,
+        rc::Rc,
+    };
 
     use crate::lexer::RelOp;
 
@@ -584,7 +600,7 @@ mod tests {
         ];
         let mut const_body = ConstBody::new();
 
-        let body = BodyParser::new(&mut tokens.into_iter().peekable(), &mut const_body).parse();
+        let body = BodyParser::parse(&mut tokens.into_iter().peekable(), &mut const_body);
 
         let b0_insr_1 = Rc::new(Instruction::new(
             1,
@@ -647,7 +663,6 @@ mod tests {
             HashMap::from([(1, -1), (2, 3), (3, 5), (4, 9)]),
             ControlFlowEdge::Leaf,
             None,
-            LinkedHashSet::from_iter([1, 2, 3, 4]),
             HashMap::from([
                 (OperatorType::Add, b0_insr_7),
                 (OperatorType::Mul, b0_insr_9),
@@ -688,11 +703,10 @@ mod tests {
         ];
         let mut const_body = ConstBody::new();
 
-        let body = BodyParser::new(
+        let body = BodyParser::parse(
             &mut tokens.map(|t| Ok(t)).into_iter().peekable(),
             &mut const_body,
-        )
-        .parse();
+        );
 
         let b0_insr_1 = Rc::new(Instruction::new(
             1,
@@ -705,7 +719,6 @@ mod tests {
             HashMap::from([(1, 1), (2, 1)]),
             ControlFlowEdge::Leaf,
             None,
-            LinkedHashSet::from_iter([1, 2]),
             HashMap::from([(OperatorType::Add, b0_insr_1)]),
         );
         let expected_body = Body::from(0, vec![main_block], 2);
@@ -757,11 +770,10 @@ mod tests {
         ];
         let mut const_body = ConstBody::new();
 
-        let body = BodyParser::new(
+        let body = BodyParser::parse(
             &mut tokens.map(|t| Ok(t)).into_iter().peekable(),
             &mut const_body,
-        )
-        .parse();
+        );
 
         let b0_insr_1 = Rc::new(Instruction::new(
             1,
@@ -784,7 +796,6 @@ mod tests {
             HashMap::from([(1, 1), (2, 2), (3, 3), (4, 2)]),
             ControlFlowEdge::Leaf,
             None,
-            LinkedHashSet::from_iter([1, 2, 3, 4]),
             HashMap::from([(OperatorType::Add, b0_insr_3)]),
         );
         let expected_body = Body::from(0, vec![main_block], 4);
@@ -833,12 +844,12 @@ mod tests {
 
         let mut const_body = ConstBody::new();
 
-        let body = BodyParser::new(
+        let body = BodyParser::parse(
             &mut tokens.map(|t| Ok(t)).into_iter().peekable(),
             &mut const_body,
-        )
-        .parse();
+        );
 
+        // Block 0
         let b0_insr_1 = Rc::new(Instruction::new(
             1,
             Operator::StoredBinaryOp(StoredBinaryOpcode::Cmp, -1, -1),
@@ -855,32 +866,34 @@ mod tests {
             HashMap::from([(1, -1)]),
             ControlFlowEdge::Fallthrough(1),
             None,
-            LinkedHashSet::from_iter([1]),
             HashMap::from([(OperatorType::Cmp, b0_insr_1.clone())]),
         );
+
+        // Block 1
         let then_block = BasicBlock::from(
             Vec::new(),
             HashMap::from([(1, -2)]),
             ControlFlowEdge::Branch(3),
             Some(0),
-            LinkedHashSet::from_iter([1]),
             HashMap::from([(OperatorType::Cmp, b0_insr_1.clone())]),
         );
+
+        // Block 2
         let else_block = BasicBlock::from(
             Vec::new(),
             HashMap::from([(1, -4)]),
             ControlFlowEdge::Fallthrough(3),
             Some(0),
-            LinkedHashSet::from_iter([1]),
             HashMap::from([(OperatorType::Cmp, b0_insr_1.clone())]),
         );
+
+        // Block 3
         let join_block = BasicBlock::from(
             vec![Rc::new(Instruction::new(3, Operator::Phi(-2, -4), None))],
             HashMap::from([(1, 3)]),
             ControlFlowEdge::Leaf,
             Some(0),
-            LinkedHashSet::from_iter([1]),
-            HashMap::from([(OperatorType::Cmp, b0_insr_1)]),
+            HashMap::from([(OperatorType::Cmp, b0_insr_1.clone())]),
         );
 
         let expected_body = Body::from(0, vec![main_block, then_block, else_block, join_block], 4);
@@ -943,11 +956,10 @@ mod tests {
 
         let mut const_body = ConstBody::new();
 
-        let body = BodyParser::new(
+        let body = BodyParser::parse(
             &mut tokens.map(|t| Ok(t)).into_iter().peekable(),
             &mut const_body,
-        )
-        .parse();
+        );
 
         let b0_insr_1 = Rc::new(Instruction::new(
             1,
@@ -970,7 +982,6 @@ mod tests {
             HashMap::from([(1, 1)]),
             ControlFlowEdge::Fallthrough(1),
             None,
-            LinkedHashSet::from_iter([1]),
             HashMap::from([
                 (OperatorType::Cmp, b0_insr_2.clone()),
                 (OperatorType::Add, b0_insr_1.clone()),
@@ -988,7 +999,6 @@ mod tests {
             HashMap::from([(1, 4), (2, 1)]),
             ControlFlowEdge::Branch(3),
             Some(0),
-            LinkedHashSet::from_iter([1, 2]),
             HashMap::from([
                 (OperatorType::Cmp, b0_insr_2.clone()),
                 (OperatorType::Add, b1_insr_1),
@@ -999,7 +1009,6 @@ mod tests {
             HashMap::from([(1, 1)]),
             ControlFlowEdge::Fallthrough(3),
             Some(0),
-            LinkedHashSet::new(),
             HashMap::from([
                 (OperatorType::Cmp, b0_insr_2.clone()),
                 (OperatorType::Add, b0_insr_1.clone()),
@@ -1013,7 +1022,6 @@ mod tests {
             HashMap::from([(1, 5), (2, 6)]),
             ControlFlowEdge::Leaf,
             Some(0),
-            LinkedHashSet::from_iter([1, 2]),
             HashMap::from([
                 (OperatorType::Cmp, b0_insr_2.clone()),
                 (OperatorType::Add, b0_insr_1.clone()),
@@ -1071,11 +1079,10 @@ mod tests {
 
         let mut const_body = ConstBody::new();
 
-        let body = BodyParser::new(
+        let body = BodyParser::parse(
             &mut tokens.map(|t| Ok(t)).into_iter().peekable(),
             &mut const_body,
-        )
-        .parse();
+        );
 
         let b0_insr_1 = Rc::new(Instruction::new(
             1,
@@ -1093,7 +1100,6 @@ mod tests {
             HashMap::from([(1, -1)]),
             ControlFlowEdge::Fallthrough(1),
             None,
-            LinkedHashSet::from_iter([1]),
             HashMap::from([(OperatorType::Cmp, b0_insr_1.clone())]),
         );
         let then_block = BasicBlock::from(
@@ -1101,7 +1107,6 @@ mod tests {
             HashMap::from([(1, -1), (2, -2), (3, -13)]),
             ControlFlowEdge::Branch(3),
             Some(0),
-            LinkedHashSet::from_iter([2, 3]),
             HashMap::from([(OperatorType::Cmp, b0_insr_1.clone())]),
         );
         let else_block = BasicBlock::from(
@@ -1109,7 +1114,6 @@ mod tests {
             HashMap::from([(1, -1), (2, -4)]),
             ControlFlowEdge::Fallthrough(3),
             Some(0),
-            LinkedHashSet::from_iter([2]),
             HashMap::from([(OperatorType::Cmp, b0_insr_1.clone())]),
         );
         let join_block = BasicBlock::from(
@@ -1120,7 +1124,6 @@ mod tests {
             HashMap::from([(1, -1), (2, 3), (3, 4)]),
             ControlFlowEdge::Leaf,
             Some(0),
-            LinkedHashSet::from_iter([2, 3]),
             HashMap::from([(OperatorType::Cmp, b0_insr_1.clone())]),
         );
 
@@ -1161,12 +1164,12 @@ mod tests {
 
         let mut const_body = ConstBody::new();
 
-        let body = BodyParser::new(
+        let body = BodyParser::parse(
             &mut tokens.map(|t| Ok(t)).into_iter().peekable(),
             &mut const_body,
-        )
-        .parse();
+        );
 
+        // Block 0
         let b0_insr_1 = Rc::new(Instruction::new(
             1,
             Operator::StoredBinaryOp(StoredBinaryOpcode::Cmp, -1, -1),
@@ -1183,23 +1186,24 @@ mod tests {
             HashMap::from([(1, -1)]),
             ControlFlowEdge::Fallthrough(1),
             None,
-            LinkedHashSet::from_iter([1]),
             HashMap::from([(OperatorType::Cmp, b0_insr_1.clone())]),
         );
+
+        // Block 1
         let then_block = BasicBlock::from(
             Vec::new(),
             HashMap::from([(1, -2)]),
             ControlFlowEdge::Fallthrough(2),
             Some(0),
-            LinkedHashSet::from_iter([1]),
             HashMap::from([(OperatorType::Cmp, b0_insr_1.clone())]),
         );
+
+        // Block 2
         let join_block = BasicBlock::from(
             vec![Rc::new(Instruction::new(3, Operator::Phi(-2, -1), None))],
             HashMap::from([(1, 3)]),
             ControlFlowEdge::Leaf,
             Some(0),
-            LinkedHashSet::from_iter([1]),
             HashMap::from([(OperatorType::Cmp, b0_insr_1.clone())]),
         );
 
@@ -1270,11 +1274,10 @@ mod tests {
 
         let mut const_body = ConstBody::new();
 
-        let body = BodyParser::new(
+        let body = BodyParser::parse(
             &mut tokens.map(|t| Ok(t)).into_iter().peekable(),
             &mut const_body,
-        )
-        .parse();
+        );
 
         let b0_insr_1 = Rc::new(Instruction::new(
             1,
@@ -1287,12 +1290,12 @@ mod tests {
             None,
         ));
 
+        // Block 0
         let main_block = BasicBlock::from(
             vec![b0_insr_1.clone(), b0_insr_2],
             HashMap::from([(1, -1)]),
             ControlFlowEdge::Fallthrough(1),
             None,
-            LinkedHashSet::from_iter([1]),
             HashMap::from([(OperatorType::Cmp, b0_insr_1.clone())]),
         );
 
@@ -1307,30 +1310,34 @@ mod tests {
             None,
         ));
 
+        // Block 1
         let then_block = BasicBlock::from(
             vec![b1_insr_1.clone(), b1_insr_2],
             HashMap::from([(1, -1)]),
             ControlFlowEdge::Fallthrough(2),
             Some(0),
-            LinkedHashSet::new(),
             HashMap::from([(OperatorType::Cmp, b1_insr_1.clone())]),
         );
+
+        // Block 2
         let sub_then_block = BasicBlock::from(
             Vec::new(),
             HashMap::from([(1, -3)]),
             ControlFlowEdge::Branch(4),
             Some(1),
-            LinkedHashSet::from_iter([1]),
             HashMap::from([(OperatorType::Cmp, b1_insr_1.clone())]),
         );
+
+        // Block 3
         let sub_else_block = BasicBlock::from(
             Vec::new(),
             HashMap::from([(1, -4), (2, -12)]),
             ControlFlowEdge::Fallthrough(4),
             Some(1),
-            LinkedHashSet::from_iter([1, 2]),
             HashMap::from([(OperatorType::Cmp, b1_insr_1.clone())]),
         );
+
+        // Block 4
         let sub_join_block = BasicBlock::from(
             vec![
                 Rc::new(Instruction::new(5, Operator::Phi(-3, -4), None)),
@@ -1339,17 +1346,19 @@ mod tests {
             HashMap::from([(1, 5), (2, 6)]),
             ControlFlowEdge::Branch(6),
             Some(1),
-            LinkedHashSet::from_iter([1, 2]),
             HashMap::from([(OperatorType::Cmp, b1_insr_1.clone())]),
         );
+
+        // Block 5
         let else_block = BasicBlock::from(
             Vec::new(),
             HashMap::from([(1, -5)]),
             ControlFlowEdge::Fallthrough(6),
             Some(0),
-            LinkedHashSet::from_iter([1]),
             HashMap::from([(OperatorType::Cmp, b0_insr_1.clone())]),
         );
+
+        // Block 6
         let join_block = BasicBlock::from(
             vec![
                 Rc::new(Instruction::new(7, Operator::Phi(5, -5), None)),
@@ -1358,7 +1367,6 @@ mod tests {
             HashMap::from([(1, 7), (2, 8)]),
             ControlFlowEdge::Leaf,
             Some(0),
-            LinkedHashSet::from_iter([1, 2]),
             HashMap::from([(OperatorType::Cmp, b0_insr_1)]),
         );
 
