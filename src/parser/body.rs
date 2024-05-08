@@ -135,15 +135,139 @@ where
     fn while_statement(&mut self) -> Result<()> {
         self.match_token(Token::While)?;
 
+        let identifier_map_copy = self
+            .get_block_mut(self.cur_block)
+            .get_identifier_map()
+            .clone();
+        let dominance_instruction_map_copy =
+            self.get_block_mut(self.cur_block).get_dom_instr_map_copy();
+
+        let join_block_id = self.body.insert_block(BasicBlock::from(
+            Vec::new(),
+            identifier_map_copy.clone(),
+            ControlFlowEdge::Leaf,
+            Some(self.cur_block),
+            dominance_instruction_map_copy.clone(),
+        ));
+
+        self.get_block_mut(self.cur_block)
+            .update_edge(ControlFlowEdge::Fallthrough(join_block_id));
+
+        self.cur_block = join_block_id;
+
         let (comparator_instruction_id, opposite_relop) = self.relation()?;
+        let join_block_branch_id = self.body.get_instruction_count() as i32;
+        self.body.increment_instruction_count();
 
         self.match_token(Token::Do)?;
 
-        self.join_blocks.push(PhiBlock::new());
+        let mut phi_block_temp = PhiBlock::new();
+        phi_block_temp.side = PhiSide::Right;
+        self.join_blocks.push(phi_block_temp);
+
+        let join_block_identifier_map = self
+            .get_block_mut(join_block_id)
+            .get_identifier_map()
+            .clone();
+        let join_block_dominance_instruction_map =
+            self.get_block_mut(join_block_id).get_dom_instr_map_copy();
+
+        let body_block_id = self.body.insert_block(BasicBlock::from(
+            Vec::new(),
+            join_block_identifier_map,
+            ControlFlowEdge::Leaf,
+            Some(join_block_id),
+            join_block_dominance_instruction_map,
+        ));
+        self.get_block_mut(join_block_id)
+            .update_edge(ControlFlowEdge::Fallthrough(body_block_id));
+        self.cur_block = body_block_id;
 
         self.stat_sequence()?;
 
         self.match_token(Token::Od)?;
+
+        let body_block_end_id = self.cur_block;
+
+        self.get_block_mut(join_block_id)
+            .push_instr_no_dom(Instruction::new(
+                join_block_branch_id,
+                Operator::Branch(
+                    BranchOpcode::from(opposite_relop),
+                    body_block_end_id,
+                    comparator_instruction_id,
+                ),
+                None,
+            ));
+
+        self.get_block_mut(body_block_end_id)
+            .update_edge(ControlFlowEdge::Branch(join_block_id));
+
+        let body_block_branch_id = self.body.get_instruction_count() as i32;
+        self.body.increment_instruction_count();
+        let body_block_end_instr = Instruction::new(
+            body_block_branch_id,
+            Operator::UnconditionalBranch(join_block_id),
+            None,
+        );
+
+        self.get_block_mut(body_block_end_id)
+            .push_instr_no_dom(body_block_end_instr);
+
+        let phi_node = self.join_blocks.pop().unwrap();
+
+        for (id, temp_phi) in phi_node.phi_map.into_iter() {
+            let new_instr_id = self.body.get_instruction_count() as i32;
+            self.body.increment_instruction_count();
+
+            let default_value = *identifier_map_copy.get(&id).unwrap_or(&0);
+
+            // Temporary: Integrate better into handling of 0 values
+            if default_value == 0
+                && (temp_phi.left_identifier_id.is_none() || temp_phi.right_identifier_id.is_none())
+            {
+                self.const_body.insert_returning_id(0);
+            }
+
+            let operator = Operator::Phi(
+                temp_phi.left_identifier_id.unwrap_or(default_value),
+                temp_phi.right_identifier_id.unwrap_or(default_value),
+            );
+
+            let new_instr = Instruction::new(new_instr_id, operator, None);
+
+            let block = self.get_block_mut(join_block_id);
+
+            block.push_phi_instr(new_instr);
+            block.insert_identifier(id, new_instr_id);
+
+            for phi_node_temp in self.join_blocks.iter_mut() {
+                if let Some(temp_phi) = phi_node_temp.phi_map.get_mut(&id) {
+                    match phi_node_temp.side {
+                        PhiSide::Left => {
+                            temp_phi.left_identifier_id = Some(new_instr_id);
+                        }
+                        PhiSide::Right => {
+                            temp_phi.right_identifier_id = Some(new_instr_id);
+                        }
+                    }
+                } else {
+                    phi_node_temp.phi_map.insert(
+                        id,
+                        match phi_node_temp.side {
+                            PhiSide::Left => PhiValues {
+                                left_identifier_id: Some(new_instr_id),
+                                right_identifier_id: None,
+                            },
+                            PhiSide::Right => PhiValues {
+                                left_identifier_id: None,
+                                right_identifier_id: Some(new_instr_id),
+                            },
+                        },
+                    );
+                }
+            }
+        }
 
         Ok(())
     }
@@ -181,8 +305,6 @@ where
         self.cur_block = then_block_id;
         self.stat_sequence()?;
         let then_block_end_id = self.cur_block;
-
-        println!("Then Block End: {}", then_block_end_id);
 
         let is_else_present = matches!(
             self.tokens
@@ -1436,11 +1558,7 @@ mod tests {
         );
 
         // Block 1
-        let b1_insr_1 = Rc::new(Instruction::new(
-            5,
-            Operator::StoredBinaryOp(StoredBinaryOpcode::Phi, -1, 3),
-            None,
-        ));
+        let b1_insr_1 = Rc::new(Instruction::new(5, Operator::Phi(-1, 3), None));
         let b1_insr_2 = Rc::new(Instruction::new(
             1,
             Operator::StoredBinaryOp(StoredBinaryOpcode::Cmp, 5, -3),

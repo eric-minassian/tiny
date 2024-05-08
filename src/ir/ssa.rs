@@ -56,7 +56,6 @@ pub enum StoredBinaryOpcode {
     Mul,
     Div,
     Cmp,
-    Phi,
 }
 
 #[derive(Debug, PartialEq, Clone)]
@@ -112,7 +111,6 @@ impl From<&StoredBinaryOpcode> for OperatorType {
             StoredBinaryOpcode::Mul => Self::Mul,
             StoredBinaryOpcode::Div => Self::Div,
             StoredBinaryOpcode::Cmp => Self::Cmp,
-            StoredBinaryOpcode::Phi => panic!("Phi is not an operator type"),
         }
     }
 }
