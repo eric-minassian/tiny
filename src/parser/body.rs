@@ -1,11 +1,17 @@
-use std::{collections::BTreeMap, iter::Peekable};
+use std::{
+    cell::RefCell,
+    collections::{BTreeMap, HashMap},
+    iter::Peekable,
+    rc::Rc,
+};
 
 use crate::{
     error::{Error, Result},
     ir::{
         block::{BasicBlock, BasicBlockId, Body, ControlFlowEdge},
         ssa::{
-            BranchOpcode, Instruction, InstructionId, Operator, OperatorType, StoredBinaryOpcode,
+            BranchOpcode, Instruction, InstructionId, Operator, OperatorType, Side,
+            StoredBinaryOpcode,
         },
         ConstBody,
     },
@@ -19,22 +25,44 @@ pub struct PhiValues {
     pub right_identifier_id: Option<i32>,
 }
 
-pub enum PhiSide {
-    Left,
-    Right,
-}
-
 pub struct PhiBlock {
-    pub side: PhiSide,
+    pub side: Side,
     pub phi_map: BTreeMap<IdentifierId, PhiValues>, // Use BTreeMap to ensure deterministic order
 }
 
 impl PhiBlock {
     pub fn new() -> Self {
         Self {
-            side: PhiSide::Left,
+            side: Side::Left,
             phi_map: BTreeMap::new(),
         }
+    }
+}
+
+#[derive(Debug)]
+pub struct SimpleReturn {
+    pub instruction_id: InstructionId,
+    pub identifier_id: Option<IdentifierId>,
+}
+
+impl SimpleReturn {
+    pub fn new(instruction_id: InstructionId, identifier_id: Option<IdentifierId>) -> Self {
+        Self {
+            instruction_id,
+            identifier_id,
+        }
+    }
+}
+
+#[derive(Debug)]
+pub struct IdentifierUse {
+    pub instruction: Rc<RefCell<Instruction>>,
+    pub side: Side,
+}
+
+impl IdentifierUse {
+    pub fn new(instruction: Rc<RefCell<Instruction>>, side: Side) -> Self {
+        Self { instruction, side }
     }
 }
 
@@ -47,6 +75,7 @@ where
     body: Body,
     cur_block: BasicBlockId,
     join_blocks: Vec<PhiBlock>,
+    identifier_use_map: HashMap<IdentifierId, Vec<IdentifierUse>>,
 }
 
 impl<'a, T> BodyParser<'a, T>
@@ -69,6 +98,7 @@ where
             cur_block: body.get_root(),
             body,
             join_blocks: Vec::new(),
+            identifier_use_map: HashMap::new(),
         }
     }
 
@@ -162,7 +192,7 @@ where
         self.match_token(Token::Do)?;
 
         let mut phi_block_temp = PhiBlock::new();
-        phi_block_temp.side = PhiSide::Right;
+        phi_block_temp.side = Side::Right;
         self.join_blocks.push(phi_block_temp);
 
         let join_block_identifier_map = self
@@ -174,11 +204,12 @@ where
 
         let body_block_id = self.body.insert_block(BasicBlock::from(
             Vec::new(),
-            join_block_identifier_map,
+            join_block_identifier_map.clone(),
             ControlFlowEdge::Leaf,
             Some(join_block_id),
-            join_block_dominance_instruction_map,
+            join_block_dominance_instruction_map.clone(),
         ));
+
         self.get_block_mut(join_block_id)
             .update_edge(ControlFlowEdge::Fallthrough(body_block_id));
         self.cur_block = body_block_id;
@@ -188,17 +219,6 @@ where
         self.match_token(Token::Od)?;
 
         let body_block_end_id = self.cur_block;
-
-        self.get_block_mut(join_block_id)
-            .push_instr_no_dom(Instruction::new(
-                join_block_branch_id,
-                Operator::Branch(
-                    BranchOpcode::from(opposite_relop),
-                    body_block_end_id,
-                    comparator_instruction_id,
-                ),
-                None,
-            ));
 
         self.get_block_mut(body_block_end_id)
             .update_edge(ControlFlowEdge::Branch(join_block_id));
@@ -241,13 +261,27 @@ where
             block.push_phi_instr(new_instr);
             block.insert_identifier(id, new_instr_id);
 
+            let identifier_use = self.identifier_use_map.get_mut(&id).unwrap();
+
+            for i in (0..identifier_use.len()).rev() {
+                let identifier_use_temp = &identifier_use[i];
+                let mut identifier_use_instr_mut = identifier_use_temp.instruction.borrow_mut();
+
+                if identifier_use_instr_mut.id() < comparator_instruction_id.instruction_id {
+                    break;
+                }
+
+                identifier_use_instr_mut
+                    .update_identifier(new_instr_id, identifier_use_temp.side.clone());
+            }
+
             for phi_node_temp in self.join_blocks.iter_mut() {
                 if let Some(temp_phi) = phi_node_temp.phi_map.get_mut(&id) {
                     match phi_node_temp.side {
-                        PhiSide::Left => {
+                        Side::Left => {
                             temp_phi.left_identifier_id = Some(new_instr_id);
                         }
-                        PhiSide::Right => {
+                        Side::Right => {
                             temp_phi.right_identifier_id = Some(new_instr_id);
                         }
                     }
@@ -255,11 +289,11 @@ where
                     phi_node_temp.phi_map.insert(
                         id,
                         match phi_node_temp.side {
-                            PhiSide::Left => PhiValues {
+                            Side::Left => PhiValues {
                                 left_identifier_id: Some(new_instr_id),
                                 right_identifier_id: None,
                             },
-                            PhiSide::Right => PhiValues {
+                            Side::Right => PhiValues {
                                 left_identifier_id: None,
                                 right_identifier_id: Some(new_instr_id),
                             },
@@ -268,6 +302,34 @@ where
                 }
             }
         }
+
+        let join_block_identifier_map = self
+            .get_block_mut(join_block_id)
+            .get_identifier_map()
+            .clone();
+        let join_block_dominance_instruction_map =
+            self.get_block_mut(join_block_id).get_dom_instr_map_copy();
+
+        let escape_block_id = self.body.insert_block(BasicBlock::from(
+            Vec::new(),
+            join_block_identifier_map,
+            ControlFlowEdge::Leaf,
+            Some(join_block_id),
+            join_block_dominance_instruction_map,
+        ));
+
+        self.get_block_mut(join_block_id)
+            .push_instr_no_dom(Instruction::new(
+                join_block_branch_id,
+                Operator::Branch(
+                    BranchOpcode::from(opposite_relop),
+                    escape_block_id,
+                    comparator_instruction_id.instruction_id,
+                ),
+                None,
+            ));
+
+        println!("AFTER WHILE: {:?}", self.identifier_use_map);
 
         Ok(())
     }
@@ -316,7 +378,7 @@ where
         if is_else_present {
             self.tokens.next();
 
-            self.join_blocks.last_mut().unwrap().side = PhiSide::Right;
+            self.join_blocks.last_mut().unwrap().side = Side::Right;
 
             let else_block_id = self.body.insert_block(BasicBlock::from(
                 Vec::new(),
@@ -364,7 +426,7 @@ where
                     } else {
                         join_block_id
                     },
-                    comparator_instruction_id,
+                    comparator_instruction_id.instruction_id,
                 ),
                 None,
             ));
@@ -401,10 +463,10 @@ where
             for phi_node_temp in self.join_blocks.iter_mut() {
                 if let Some(temp_phi) = phi_node_temp.phi_map.get_mut(&id) {
                     match phi_node_temp.side {
-                        PhiSide::Left => {
+                        Side::Left => {
                             temp_phi.left_identifier_id = Some(new_instr_id);
                         }
-                        PhiSide::Right => {
+                        Side::Right => {
                             temp_phi.right_identifier_id = Some(new_instr_id);
                         }
                     }
@@ -412,11 +474,11 @@ where
                     phi_node_temp.phi_map.insert(
                         id,
                         match phi_node_temp.side {
-                            PhiSide::Left => PhiValues {
+                            Side::Left => PhiValues {
                                 left_identifier_id: Some(new_instr_id),
                                 right_identifier_id: None,
                             },
-                            PhiSide::Right => PhiValues {
+                            Side::Right => PhiValues {
                                 left_identifier_id: None,
                                 right_identifier_id: Some(new_instr_id),
                             },
@@ -471,7 +533,7 @@ where
             Token::Identifier(identifier_id) => {
                 self.match_token(Token::Assignment)?;
 
-                let instruction_id = self.expression()?;
+                let instruction_id = self.expression()?.instruction_id;
 
                 self.get_block_mut(self.cur_block)
                     .insert_identifier(identifier_id, instruction_id);
@@ -487,10 +549,10 @@ where
                             });
 
                     match phi_node.side {
-                        PhiSide::Left => {
+                        Side::Left => {
                             temp_phi.left_identifier_id = Some(instruction_id);
                         }
-                        PhiSide::Right => {
+                        Side::Right => {
                             temp_phi.right_identifier_id = Some(instruction_id);
                         }
                     }
@@ -502,8 +564,8 @@ where
         }
     }
 
-    fn relation(&mut self) -> Result<(InstructionId, RelOp)> {
-        let instr_id = self.expression()?;
+    fn relation(&mut self) -> Result<(SimpleReturn, RelOp)> {
+        let left = self.expression()?;
 
         match self
             .tokens
@@ -511,9 +573,9 @@ where
             .ok_or_else(|| Error::UnexpectedEndOfFile)??
         {
             Token::RelOp(relop) => {
-                let instr_id2 = self.expression()?;
+                let right = self.expression()?;
                 Ok((
-                    self.handle_binary_op(StoredBinaryOpcode::Cmp, instr_id, instr_id2),
+                    self.handle_binary_op(StoredBinaryOpcode::Cmp, left, right),
                     relop.opposite(),
                 ))
             }
@@ -524,15 +586,15 @@ where
     fn handle_binary_op(
         &mut self,
         operator: StoredBinaryOpcode,
-        instr_id: InstructionId,
-        instr_id2: InstructionId,
-    ) -> InstructionId {
+        left: SimpleReturn,
+        right: SimpleReturn,
+    ) -> SimpleReturn {
         let new_instr_id = self.body.get_instruction_count() as i32;
 
         let operator_type = OperatorType::from(&operator);
         let mut new_instr = Instruction::new(
             new_instr_id,
-            Operator::StoredBinaryOp(operator, instr_id, instr_id2),
+            Operator::StoredBinaryOp(operator, left.instruction_id, right.instruction_id),
             None,
         );
 
@@ -540,8 +602,10 @@ where
             .get_block_mut(self.cur_block)
             .get_dom_instr(&operator_type)
         {
-            if let Some(dup_instr_id) = dom_instr.check_dominators(&new_instr) {
-                return dup_instr_id;
+            if let Some(dup_instr_id) = dom_instr.try_borrow().unwrap().check_dominators(&new_instr)
+            {
+                // return dup_instr_id;
+                return SimpleReturn::new(dup_instr_id, None);
             }
 
             let dom_instr = self
@@ -552,66 +616,85 @@ where
             new_instr.update_dom(dom_instr);
         }
 
+        let new_instr = Rc::new(RefCell::new(new_instr));
+
         self.get_block_mut(self.cur_block)
             .push_instr(new_instr.clone(), operator_type);
 
+        if let Some(identifier_id) = left.identifier_id {
+            self.identifier_use_map
+                .entry(identifier_id)
+                .or_insert_with(Vec::new)
+                .push(IdentifierUse::new(new_instr.clone(), Side::Left));
+        }
+        if let Some(identifier_id) = right.identifier_id {
+            self.identifier_use_map
+                .entry(identifier_id)
+                .or_insert_with(Vec::new)
+                // .push(new_instr.clone());
+                .push(IdentifierUse::new(new_instr.clone(), Side::Right));
+        }
+
         self.body.increment_instruction_count();
 
-        new_instr_id
+        // new_instr_id
+        SimpleReturn::new(new_instr_id, None)
     }
 
-    fn expression(&mut self) -> Result<InstructionId> {
-        let mut instr_id = self.term()?;
+    fn expression(&mut self) -> Result<SimpleReturn> {
+        let mut left = self.term()?;
 
         while let Some(token) = self.tokens.peek() {
             match token {
                 Ok(Token::Add) => {
                     self.tokens.next();
-                    let instr_id2 = self.term()?;
-                    instr_id = self.handle_binary_op(StoredBinaryOpcode::Add, instr_id, instr_id2);
+                    let right = self.term()?;
+                    left = self.handle_binary_op(StoredBinaryOpcode::Add, left, right);
                 }
                 Ok(Token::Sub) => {
                     self.tokens.next();
-                    let instr_id2 = self.term()?;
-                    instr_id = self.handle_binary_op(StoredBinaryOpcode::Sub, instr_id, instr_id2);
+                    let right = self.term()?;
+                    left = self.handle_binary_op(StoredBinaryOpcode::Sub, left, right);
                 }
 
                 _ => break,
             }
         }
 
-        Ok(instr_id)
+        Ok(left)
     }
 
-    fn term(&mut self) -> Result<InstructionId> {
-        let mut instr_id = self.factor()?;
+    fn term(&mut self) -> Result<SimpleReturn> {
+        let mut left = self.factor()?;
 
         while let Some(token) = self.tokens.peek() {
             match token {
                 Ok(Token::Mul) => {
                     self.tokens.next();
-                    let instr_id2 = self.factor()?;
-                    instr_id = self.handle_binary_op(StoredBinaryOpcode::Mul, instr_id, instr_id2);
+                    let right = self.factor()?;
+                    left = self.handle_binary_op(StoredBinaryOpcode::Mul, left, right);
                 }
                 Ok(Token::Div) => {
                     self.tokens.next();
-                    let instr_id2 = self.factor()?;
-                    instr_id = self.handle_binary_op(StoredBinaryOpcode::Div, instr_id, instr_id2);
+                    let right = self.factor()?;
+                    left = self.handle_binary_op(StoredBinaryOpcode::Div, left, right);
                 }
                 _ => break,
             }
         }
 
-        Ok(instr_id)
+        Ok(left)
     }
 
-    fn factor(&mut self) -> Result<InstructionId> {
+    fn factor(&mut self) -> Result<SimpleReturn> {
         match self
             .tokens
             .peek()
             .ok_or_else(|| Error::UnexpectedEndOfFile)?
         {
             Ok(Token::Identifier(id)) => {
+                let identifier_id = *id;
+
                 let instruction_id = self
                     .body
                     .get_mut_block(self.cur_block)
@@ -621,13 +704,15 @@ where
                     .clone();
                 self.tokens.next();
 
-                Ok(instruction_id)
+                // Ok(instruction_id)
+                Ok(SimpleReturn::new(instruction_id, Some(identifier_id)))
             }
             Ok(Token::Number(num)) => {
                 let instruction_id = self.const_body.insert_returning_id(*num);
                 self.tokens.next();
 
-                Ok(instruction_id)
+                // Ok(instruction_id)
+                Ok(SimpleReturn::new(instruction_id, None))
             }
             Ok(Token::LPar) => {
                 self.tokens.next();
@@ -656,8 +741,8 @@ mod tests {
 
     use pretty_assertions::assert_eq;
     use std::{
+        cell::RefCell,
         collections::{HashMap, HashSet},
-        hash::Hash,
         rc::Rc,
     };
 
@@ -724,51 +809,51 @@ mod tests {
 
         let body = BodyParser::parse(&mut tokens.into_iter().peekable(), &mut const_body);
 
-        let b0_insr_1 = Rc::new(Instruction::new(
+        let b0_insr_1 = Rc::new(RefCell::new(Instruction::new(
             1,
             Operator::StoredBinaryOp(StoredBinaryOpcode::Add, -1, -2),
             None,
-        ));
-        let b0_insr_2 = Rc::new(Instruction::new(
+        )));
+        let b0_insr_2 = Rc::new(RefCell::new(Instruction::new(
             2,
             Operator::StoredBinaryOp(StoredBinaryOpcode::Add, 1, 0),
             Some(b0_insr_1.clone()),
-        ));
-        let b0_insr_3 = Rc::new(Instruction::new(
+        )));
+        let b0_insr_3 = Rc::new(RefCell::new(Instruction::new(
             3,
             Operator::StoredBinaryOp(StoredBinaryOpcode::Sub, 2, -4),
             None,
-        ));
-        let b0_insr_4 = Rc::new(Instruction::new(
+        )));
+        let b0_insr_4 = Rc::new(RefCell::new(Instruction::new(
             4,
             Operator::StoredBinaryOp(StoredBinaryOpcode::Mul, -3, -2),
             None,
-        ));
-        let b0_insr_5 = Rc::new(Instruction::new(
+        )));
+        let b0_insr_5 = Rc::new(RefCell::new(Instruction::new(
             5,
             Operator::StoredBinaryOp(StoredBinaryOpcode::Div, 4, -1),
             None,
-        ));
-        let b0_insr_6 = Rc::new(Instruction::new(
+        )));
+        let b0_insr_6 = Rc::new(RefCell::new(Instruction::new(
             6,
             Operator::StoredBinaryOp(StoredBinaryOpcode::Add, 3, 5),
             Some(b0_insr_2.clone()),
-        ));
-        let b0_insr_7 = Rc::new(Instruction::new(
+        )));
+        let b0_insr_7 = Rc::new(RefCell::new(Instruction::new(
             7,
             Operator::StoredBinaryOp(StoredBinaryOpcode::Add, -1, 6),
             Some(b0_insr_6.clone()),
-        ));
-        let b0_insr_8 = Rc::new(Instruction::new(
+        )));
+        let b0_insr_8 = Rc::new(RefCell::new(Instruction::new(
             8,
             Operator::StoredBinaryOp(StoredBinaryOpcode::Div, 7, -2),
             Some(b0_insr_5.clone()),
-        ));
-        let b0_insr_9 = Rc::new(Instruction::new(
+        )));
+        let b0_insr_9 = Rc::new(RefCell::new(Instruction::new(
             9,
             Operator::StoredBinaryOp(StoredBinaryOpcode::Mul, -1, 8),
             Some(b0_insr_4.clone()),
-        ));
+        )));
 
         let main_block = BasicBlock::from(
             vec![
@@ -830,11 +915,11 @@ mod tests {
             &mut const_body,
         );
 
-        let b0_insr_1 = Rc::new(Instruction::new(
+        let b0_insr_1 = Rc::new(RefCell::new(Instruction::new(
             1,
             Operator::StoredBinaryOp(StoredBinaryOpcode::Add, -1, -3),
             None,
-        ));
+        )));
 
         let main_block = BasicBlock::from(
             vec![b0_insr_1.clone()],
@@ -897,21 +982,21 @@ mod tests {
             &mut const_body,
         );
 
-        let b0_insr_1 = Rc::new(Instruction::new(
+        let b0_insr_1 = Rc::new(RefCell::new(Instruction::new(
             1,
             Operator::StoredBinaryOp(StoredBinaryOpcode::Add, -1, -3),
             None,
-        ));
-        let b0_insr_2 = Rc::new(Instruction::new(
+        )));
+        let b0_insr_2 = Rc::new(RefCell::new(Instruction::new(
             2,
             Operator::StoredBinaryOp(StoredBinaryOpcode::Add, 1, -3),
             Some(b0_insr_1.clone()),
-        ));
-        let b0_insr_3 = Rc::new(Instruction::new(
+        )));
+        let b0_insr_3 = Rc::new(RefCell::new(Instruction::new(
             3,
             Operator::StoredBinaryOp(StoredBinaryOpcode::Add, 1, 2),
             Some(b0_insr_2.clone()),
-        ));
+        )));
 
         let main_block = BasicBlock::from(
             vec![b0_insr_1, b0_insr_2, b0_insr_3.clone()],
@@ -972,16 +1057,16 @@ mod tests {
         );
 
         // Block 0
-        let b0_insr_1 = Rc::new(Instruction::new(
+        let b0_insr_1 = Rc::new(RefCell::new(Instruction::new(
             1,
             Operator::StoredBinaryOp(StoredBinaryOpcode::Cmp, -1, -1),
             None,
-        ));
-        let b0_insr_2 = Rc::new(Instruction::new(
+        )));
+        let b0_insr_2 = Rc::new(RefCell::new(Instruction::new(
             2,
             Operator::Branch(BranchOpcode::Ge, 2, 1),
             None,
-        ));
+        )));
 
         let main_block = BasicBlock::from(
             vec![b0_insr_1.clone(), b0_insr_2],
@@ -1011,7 +1096,11 @@ mod tests {
 
         // Block 3
         let join_block = BasicBlock::from(
-            vec![Rc::new(Instruction::new(3, Operator::Phi(-2, -4), None))],
+            vec![Rc::new(RefCell::new(Instruction::new(
+                3,
+                Operator::Phi(-2, -4),
+                None,
+            )))],
             HashMap::from([(1, 3)]),
             ControlFlowEdge::Leaf,
             Some(0),
@@ -1083,21 +1172,21 @@ mod tests {
             &mut const_body,
         );
 
-        let b0_insr_1 = Rc::new(Instruction::new(
+        let b0_insr_1 = Rc::new(RefCell::new(Instruction::new(
             1,
             Operator::StoredBinaryOp(StoredBinaryOpcode::Add, -1, -4),
             None,
-        ));
-        let b0_insr_2 = Rc::new(Instruction::new(
+        )));
+        let b0_insr_2 = Rc::new(RefCell::new(Instruction::new(
             2,
             Operator::StoredBinaryOp(StoredBinaryOpcode::Cmp, 1, -1),
             None,
-        ));
-        let b0_insr_3 = Rc::new(Instruction::new(
+        )));
+        let b0_insr_3 = Rc::new(RefCell::new(Instruction::new(
             3,
             Operator::Branch(BranchOpcode::Ge, 2, 2),
             None,
-        ));
+        )));
 
         let main_block = BasicBlock::from(
             vec![b0_insr_1.clone(), b0_insr_2.clone(), b0_insr_3],
@@ -1110,11 +1199,11 @@ mod tests {
             ]),
         );
 
-        let b1_insr_1 = Rc::new(Instruction::new(
+        let b1_insr_1 = Rc::new(RefCell::new(Instruction::new(
             4,
             Operator::StoredBinaryOp(StoredBinaryOpcode::Add, -2, -1),
             Some(b0_insr_1.clone()),
-        ));
+        )));
 
         let then_block = BasicBlock::from(
             vec![b1_insr_1.clone()],
@@ -1138,8 +1227,8 @@ mod tests {
         );
         let join_block = BasicBlock::from(
             vec![
-                Rc::new(Instruction::new(5, Operator::Phi(4, 1), None)),
-                Rc::new(Instruction::new(6, Operator::Phi(1, 0), None)),
+                Rc::new(RefCell::new(Instruction::new(5, Operator::Phi(4, 1), None))),
+                Rc::new(RefCell::new(Instruction::new(6, Operator::Phi(1, 0), None))),
             ],
             HashMap::from([(1, 5), (2, 6)]),
             ControlFlowEdge::Leaf,
@@ -1206,16 +1295,16 @@ mod tests {
             &mut const_body,
         );
 
-        let b0_insr_1 = Rc::new(Instruction::new(
+        let b0_insr_1 = Rc::new(RefCell::new(Instruction::new(
             1,
             Operator::StoredBinaryOp(StoredBinaryOpcode::Cmp, -1, -1),
             None,
-        ));
-        let b0_insr_2 = Rc::new(Instruction::new(
+        )));
+        let b0_insr_2 = Rc::new(RefCell::new(Instruction::new(
             2,
             Operator::Branch(BranchOpcode::Ge, 2, 1),
             None,
-        ));
+        )));
 
         let main_block = BasicBlock::from(
             vec![b0_insr_1.clone(), b0_insr_2],
@@ -1240,8 +1329,16 @@ mod tests {
         );
         let join_block = BasicBlock::from(
             vec![
-                Rc::new(Instruction::new(3, Operator::Phi(-2, -4), None)),
-                Rc::new(Instruction::new(4, Operator::Phi(-13, 0), None)),
+                Rc::new(RefCell::new(Instruction::new(
+                    3,
+                    Operator::Phi(-2, -4),
+                    None,
+                ))),
+                Rc::new(RefCell::new(Instruction::new(
+                    4,
+                    Operator::Phi(-13, 0),
+                    None,
+                ))),
             ],
             HashMap::from([(1, -1), (2, 3), (3, 4)]),
             ControlFlowEdge::Leaf,
@@ -1292,16 +1389,16 @@ mod tests {
         );
 
         // Block 0
-        let b0_insr_1 = Rc::new(Instruction::new(
+        let b0_insr_1 = Rc::new(RefCell::new(Instruction::new(
             1,
             Operator::StoredBinaryOp(StoredBinaryOpcode::Cmp, -1, -1),
             None,
-        ));
-        let b0_insr_2 = Rc::new(Instruction::new(
+        )));
+        let b0_insr_2 = Rc::new(RefCell::new(Instruction::new(
             2,
             Operator::Branch(BranchOpcode::Ne, 2, 1),
             None,
-        ));
+        )));
 
         let main_block = BasicBlock::from(
             vec![b0_insr_1.clone(), b0_insr_2],
@@ -1322,7 +1419,11 @@ mod tests {
 
         // Block 2
         let join_block = BasicBlock::from(
-            vec![Rc::new(Instruction::new(3, Operator::Phi(-2, -1), None))],
+            vec![Rc::new(RefCell::new(Instruction::new(
+                3,
+                Operator::Phi(-2, -1),
+                None,
+            )))],
             HashMap::from([(1, 3)]),
             ControlFlowEdge::Leaf,
             Some(0),
@@ -1401,18 +1502,18 @@ mod tests {
             &mut const_body,
         );
 
-        let b0_insr_1 = Rc::new(Instruction::new(
+        // Block 0
+        let b0_insr_1 = Rc::new(RefCell::new(Instruction::new(
             1,
             Operator::StoredBinaryOp(StoredBinaryOpcode::Cmp, -1, -1),
             None,
-        ));
-        let b0_insr_2 = Rc::new(Instruction::new(
+        )));
+        let b0_insr_2 = Rc::new(RefCell::new(Instruction::new(
             2,
             Operator::Branch(BranchOpcode::Le, 5, 1),
             None,
-        ));
+        )));
 
-        // Block 0
         let main_block = BasicBlock::from(
             vec![b0_insr_1.clone(), b0_insr_2],
             HashMap::from([(1, -1)]),
@@ -1421,18 +1522,18 @@ mod tests {
             HashMap::from([(OperatorType::Cmp, b0_insr_1.clone())]),
         );
 
-        let b1_insr_1 = Rc::new(Instruction::new(
+        // Block 1
+        let b1_insr_1 = Rc::new(RefCell::new(Instruction::new(
             3,
             Operator::StoredBinaryOp(StoredBinaryOpcode::Cmp, -1, -3),
             Some(b0_insr_1.clone()),
-        ));
-        let b1_insr_2 = Rc::new(Instruction::new(
+        )));
+        let b1_insr_2 = Rc::new(RefCell::new(Instruction::new(
             4,
             Operator::Branch(BranchOpcode::Ge, 3, 3),
             None,
-        ));
+        )));
 
-        // Block 1
         let then_block = BasicBlock::from(
             vec![b1_insr_1.clone(), b1_insr_2],
             HashMap::from([(1, -1)]),
@@ -1462,8 +1563,16 @@ mod tests {
         // Block 4
         let sub_join_block = BasicBlock::from(
             vec![
-                Rc::new(Instruction::new(5, Operator::Phi(-3, -4), None)),
-                Rc::new(Instruction::new(6, Operator::Phi(0, -12), None)),
+                Rc::new(RefCell::new(Instruction::new(
+                    5,
+                    Operator::Phi(-3, -4),
+                    None,
+                ))),
+                Rc::new(RefCell::new(Instruction::new(
+                    6,
+                    Operator::Phi(0, -12),
+                    None,
+                ))),
             ],
             HashMap::from([(1, 5), (2, 6)]),
             ControlFlowEdge::Branch(6),
@@ -1483,8 +1592,12 @@ mod tests {
         // Block 6
         let join_block = BasicBlock::from(
             vec![
-                Rc::new(Instruction::new(7, Operator::Phi(5, -5), None)),
-                Rc::new(Instruction::new(8, Operator::Phi(6, 0), None)),
+                Rc::new(RefCell::new(Instruction::new(
+                    7,
+                    Operator::Phi(5, -5),
+                    None,
+                ))),
+                Rc::new(RefCell::new(Instruction::new(8, Operator::Phi(6, 0), None))),
             ],
             HashMap::from([(1, 7), (2, 8)]),
             ControlFlowEdge::Leaf,
@@ -1558,17 +1671,21 @@ mod tests {
         );
 
         // Block 1
-        let b1_insr_1 = Rc::new(Instruction::new(5, Operator::Phi(-1, 3), None));
-        let b1_insr_2 = Rc::new(Instruction::new(
+        let b1_insr_1 = Rc::new(RefCell::new(Instruction::new(
+            5,
+            Operator::Phi(-1, 3),
+            None,
+        )));
+        let b1_insr_2 = Rc::new(RefCell::new(Instruction::new(
             1,
             Operator::StoredBinaryOp(StoredBinaryOpcode::Cmp, 5, -3),
             None,
-        ));
-        let b1_insr_3 = Rc::new(Instruction::new(
+        )));
+        let b1_insr_3 = Rc::new(RefCell::new(Instruction::new(
             2,
             Operator::Branch(BranchOpcode::Ge, 3, 1),
             None,
-        ));
+        )));
 
         let join_block = BasicBlock::from(
             vec![b1_insr_1, b1_insr_2.clone(), b1_insr_3],
@@ -1579,12 +1696,16 @@ mod tests {
         );
 
         // Block 2
-        let b2_insr_1 = Rc::new(Instruction::new(
+        let b2_insr_1 = Rc::new(RefCell::new(Instruction::new(
             3,
             Operator::StoredBinaryOp(StoredBinaryOpcode::Add, 5, -1),
             None,
-        ));
-        let b2_insr_2 = Rc::new(Instruction::new(4, Operator::UnconditionalBranch(1), None));
+        )));
+        let b2_insr_2 = Rc::new(RefCell::new(Instruction::new(
+            4,
+            Operator::UnconditionalBranch(1),
+            None,
+        )));
 
         let body_block = BasicBlock::from(
             vec![b2_insr_1.clone(), b2_insr_2],
@@ -1592,14 +1713,24 @@ mod tests {
             ControlFlowEdge::Branch(1),
             Some(1),
             HashMap::from([
-                (OperatorType::Cmp, b1_insr_2),
+                (OperatorType::Cmp, b1_insr_2.clone()),
                 (OperatorType::Add, b2_insr_1),
             ]),
         );
 
-        let expected_body = Body::from(0, vec![main_block, join_block, body_block], 6);
+        // Block 3
+        let escape_block = BasicBlock::from(
+            Vec::new(),
+            HashMap::from([(1, 5)]),
+            ControlFlowEdge::Leaf,
+            Some(1),
+            HashMap::from([(OperatorType::Cmp, b1_insr_2)]),
+        );
 
-        let expected_const_body = ConstBody::from(HashSet::from([1, 2]));
+        let expected_body =
+            Body::from(0, vec![main_block, join_block, body_block, escape_block], 6);
+
+        let expected_const_body = ConstBody::from(HashSet::from([1, 3]));
 
         assert_eq!(body, expected_body);
         assert_eq!(const_body, expected_const_body);
