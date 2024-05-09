@@ -1,4 +1,4 @@
-use std::{collections::HashMap, rc::Rc};
+use std::{cell::RefCell, collections::HashMap, rc::Rc};
 
 use crate::lexer::IdentifierId;
 
@@ -62,11 +62,11 @@ impl Body {
 
 #[derive(Debug, PartialEq, Clone)]
 pub struct BasicBlock {
-    instructions: Vec<Rc<Instruction>>,
+    instructions: Vec<Rc<RefCell<Instruction>>>,
     identifier_map: HashMap<IdentifierId, InstructionId>,
     edge: ControlFlowEdge,
     dominator: Option<BasicBlockId>,
-    dom_instr_map: HashMap<OperatorType, Rc<Instruction>>,
+    dom_instr_map: HashMap<OperatorType, Rc<RefCell<Instruction>>>,
 }
 
 impl BasicBlock {
@@ -81,11 +81,11 @@ impl BasicBlock {
     }
 
     pub fn from(
-        instructions: Vec<Rc<Instruction>>,
+        instructions: Vec<Rc<RefCell<Instruction>>>,
         identifier_map: HashMap<IdentifierId, InstructionId>,
         edge: ControlFlowEdge,
         dominator: Option<BasicBlockId>,
-        dom_instr_map: HashMap<OperatorType, Rc<Instruction>>,
+        dom_instr_map: HashMap<OperatorType, Rc<RefCell<Instruction>>>,
     ) -> Self {
         Self {
             instructions,
@@ -96,37 +96,26 @@ impl BasicBlock {
         }
     }
 
-    pub fn remove_dom_instr(&mut self, op_type: OperatorType) -> Option<Rc<Instruction>> {
+    pub fn remove_dom_instr(&mut self, op_type: OperatorType) -> Option<Rc<RefCell<Instruction>>> {
         self.dom_instr_map.remove(&op_type)
     }
 
-    pub fn get_dom_instr(&self, op_type: &OperatorType) -> Option<&Rc<Instruction>> {
+    pub fn get_dom_instr(&self, op_type: &OperatorType) -> Option<&Rc<RefCell<Instruction>>> {
         self.dom_instr_map.get(op_type)
     }
 
-    pub fn push_instr(&mut self, instr: Instruction, op_type: OperatorType) {
-        let instr = Rc::new(instr);
+    pub fn push_instr(&mut self, instr: Rc<RefCell<Instruction>>, op_type: OperatorType) {
         self.instructions.push(instr.clone());
         self.dom_instr_map.insert(op_type, instr);
     }
 
     pub fn push_instr_no_dom(&mut self, instr: Instruction) {
-        self.instructions.push(Rc::new(instr));
+        self.instructions.push(Rc::new(RefCell::new(instr)));
     }
 
     pub fn push_phi_instr(&mut self, instr: Instruction) {
-        println!("Pushing phi instr: {:?}", instr);
-        println!("Length of instructions: {:?}", self.instructions.len());
         self.instructions
-            .insert(self.instructions.len() - 2, Rc::new(instr));
-    }
-
-    pub fn update_instructions(&mut self, instructions: Vec<Rc<Instruction>>) {
-        self.instructions = instructions;
-    }
-
-    pub fn update_identifier_map(&mut self, identifier_map: HashMap<IdentifierId, InstructionId>) {
-        self.identifier_map = identifier_map
+            .insert(self.instructions.len() - 1, Rc::new(RefCell::new(instr)));
     }
 
     pub fn get_identifier(&mut self, identifier: &IdentifierId) -> Option<&InstructionId> {
@@ -149,7 +138,7 @@ impl BasicBlock {
         &self.identifier_map
     }
 
-    pub fn get_dom_instr_map_copy(&self) -> HashMap<OperatorType, Rc<Instruction>> {
+    pub fn get_dom_instr_map_copy(&self) -> HashMap<OperatorType, Rc<RefCell<Instruction>>> {
         self.dom_instr_map.clone()
     }
 }
