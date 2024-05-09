@@ -148,7 +148,7 @@ impl From<&StoredBinaryOpcode> for OperatorType {
 mod tests {
     use super::*;
 
-    use pretty_assertions::assert_eq;
+    use pretty_assertions_sorted::assert_eq;
 
     #[test]
     #[should_panic]

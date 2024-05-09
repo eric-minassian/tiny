@@ -1,7 +1,11 @@
 pub mod block;
 pub mod ssa;
 
-use std::collections::{HashMap, HashSet};
+use std::{
+    cell::RefCell,
+    collections::{HashMap, HashSet},
+    rc::Rc,
+};
 
 use crate::lexer::Number;
 
