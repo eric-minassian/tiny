@@ -1,11 +1,8 @@
 pub mod block;
+pub mod inheriting_hashmap;
 pub mod ssa;
 
-use std::{
-    cell::RefCell,
-    collections::{HashMap, HashSet},
-    rc::Rc,
-};
+use std::collections::{HashMap, HashSet};
 
 use crate::lexer::Number;
 
