@@ -109,13 +109,12 @@ impl BasicBlock {
         self.dom_instr_map.insert(op_type, instr);
     }
 
-    pub fn push_instr_no_dom(&mut self, instr: Instruction) {
-        self.instructions.push(Rc::new(RefCell::new(instr)));
+    pub fn push_instr_no_dom(&mut self, instr: Rc<RefCell<Instruction>>) {
+        self.instructions.push(instr);
     }
 
-    pub fn push_phi_instr(&mut self, instr: Instruction) {
-        self.instructions
-            .insert(self.instructions.len() - 1, Rc::new(RefCell::new(instr)));
+    pub fn push_phi_instr(&mut self, instr: Rc<RefCell<Instruction>>) {
+        self.instructions.insert(0, instr);
     }
 
     pub fn get_identifier(&mut self, identifier: &IdentifierId) -> Option<&InstructionId> {
