@@ -3,13 +3,14 @@ use std::{cell::RefCell, collections::HashMap, rc::Rc};
 use crate::lexer::IdentifierId;
 
 use super::{
+    inheriting_hashmap::InheritingHashMap,
     ssa::{Instruction, OperatorType},
     InstructionId,
 };
 
 pub type BasicBlockId = usize;
 
-#[derive(Debug, PartialEq, Clone)]
+#[derive(Debug, PartialEq)]
 pub struct Body {
     root: BasicBlockId,
     blocks: Vec<BasicBlock>,
@@ -60,10 +61,10 @@ impl Body {
     }
 }
 
-#[derive(Debug, PartialEq, Clone)]
+#[derive(Debug, PartialEq)]
 pub struct BasicBlock {
     instructions: Vec<Rc<RefCell<Instruction>>>,
-    identifier_map: HashMap<IdentifierId, InstructionId>,
+    identifier_map: InheritingHashMap<IdentifierId, InstructionId>,
     edge: ControlFlowEdge,
     dominator: Option<BasicBlockId>,
     dom_instr_map: HashMap<OperatorType, Rc<RefCell<Instruction>>>,
@@ -73,7 +74,7 @@ impl BasicBlock {
     pub fn new() -> Self {
         Self {
             instructions: Vec::new(),
-            identifier_map: HashMap::new(),
+            identifier_map: InheritingHashMap::new(),
             edge: ControlFlowEdge::Leaf,
             dominator: None,
             dom_instr_map: HashMap::new(),
@@ -82,7 +83,7 @@ impl BasicBlock {
 
     pub fn from(
         instructions: Vec<Rc<RefCell<Instruction>>>,
-        identifier_map: HashMap<IdentifierId, InstructionId>,
+        identifier_map: InheritingHashMap<IdentifierId, InstructionId>,
         edge: ControlFlowEdge,
         dominator: Option<BasicBlockId>,
         dom_instr_map: HashMap<OperatorType, Rc<RefCell<Instruction>>>,
@@ -117,7 +118,7 @@ impl BasicBlock {
         self.instructions.insert(0, instr);
     }
 
-    pub fn get_identifier(&mut self, identifier: &IdentifierId) -> Option<&InstructionId> {
+    pub fn get_identifier(&mut self, identifier: &IdentifierId) -> Option<InstructionId> {
         self.identifier_map.get(identifier)
     }
 
@@ -133,7 +134,7 @@ impl BasicBlock {
         self.edge = edge;
     }
 
-    pub fn get_identifier_map(&self) -> &HashMap<IdentifierId, InstructionId> {
+    pub fn get_identifier_map(&self) -> &InheritingHashMap<IdentifierId, InstructionId> {
         &self.identifier_map
     }
 
