@@ -4,7 +4,7 @@ use crate::lexer::IdentifierId;
 
 use super::{
     inheriting_hashmap::InheritingHashMap,
-    ssa::{Instruction, OperatorType},
+    ssa::{Instruction, StoredBinaryOpcode},
     InstructionId,
 };
 
@@ -67,7 +67,7 @@ pub struct BasicBlock {
     identifier_map: InheritingHashMap<IdentifierId, InstructionId>,
     edge: ControlFlowEdge,
     dominator: Option<BasicBlockId>,
-    dom_instr_map: HashMap<OperatorType, Rc<RefCell<Instruction>>>,
+    dom_instr_map: InheritingHashMap<StoredBinaryOpcode, Rc<RefCell<Instruction>>>,
 }
 
 impl BasicBlock {
@@ -77,7 +77,7 @@ impl BasicBlock {
             identifier_map: InheritingHashMap::new(),
             edge: ControlFlowEdge::Leaf,
             dominator: None,
-            dom_instr_map: HashMap::new(),
+            dom_instr_map: InheritingHashMap::new(),
         }
     }
 
@@ -86,7 +86,7 @@ impl BasicBlock {
         identifier_map: InheritingHashMap<IdentifierId, InstructionId>,
         edge: ControlFlowEdge,
         dominator: Option<BasicBlockId>,
-        dom_instr_map: HashMap<OperatorType, Rc<RefCell<Instruction>>>,
+        dom_instr_map: InheritingHashMap<StoredBinaryOpcode, Rc<RefCell<Instruction>>>,
     ) -> Self {
         Self {
             instructions,
@@ -97,15 +97,18 @@ impl BasicBlock {
         }
     }
 
-    pub fn remove_dom_instr(&mut self, op_type: OperatorType) -> Option<Rc<RefCell<Instruction>>> {
-        self.dom_instr_map.remove(&op_type)
-    }
+    // pub fn remove_dom_instr(
+    //     &mut self,
+    //     op_type: StoredBinaryOpcode,
+    // ) -> Option<Rc<RefCell<Instruction>>> {
+    //     self.dom_instr_map.remove(&op_type)
+    // }
 
-    pub fn get_dom_instr(&self, op_type: &OperatorType) -> Option<&Rc<RefCell<Instruction>>> {
+    pub fn get_dom_instr(&self, op_type: &StoredBinaryOpcode) -> Option<Rc<RefCell<Instruction>>> {
         self.dom_instr_map.get(op_type)
     }
 
-    pub fn push_instr(&mut self, instr: Rc<RefCell<Instruction>>, op_type: OperatorType) {
+    pub fn push_instr(&mut self, instr: Rc<RefCell<Instruction>>, op_type: StoredBinaryOpcode) {
         self.instructions.push(instr.clone());
         self.dom_instr_map.insert(op_type, instr);
     }
@@ -114,9 +117,14 @@ impl BasicBlock {
         self.instructions.push(instr);
     }
 
-    pub fn push_phi_instr(&mut self, instr: Rc<RefCell<Instruction>>) {
-        self.instructions.insert(0, instr);
+    pub fn pop_and_push_1(&mut self) {
+        let instr = self.instructions.remove(0);
+        self.instructions.insert(self.instructions.len() - 1, instr);
     }
+
+    // pub fn push_phi_instr(&mut self, instr: Rc<RefCell<Instruction>>) {
+    //     self.instructions.insert(0, instr);
+    // }
 
     pub fn get_identifier(&mut self, identifier: &IdentifierId) -> Option<InstructionId> {
         self.identifier_map.get(identifier)
@@ -138,8 +146,10 @@ impl BasicBlock {
         &self.identifier_map
     }
 
-    pub fn get_dom_instr_map_copy(&self) -> HashMap<OperatorType, Rc<RefCell<Instruction>>> {
-        self.dom_instr_map.clone()
+    pub fn get_dom_instr_map(
+        &self,
+    ) -> &InheritingHashMap<StoredBinaryOpcode, Rc<RefCell<Instruction>>> {
+        &self.dom_instr_map
     }
 }
 

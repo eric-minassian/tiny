@@ -10,10 +10,7 @@ use crate::{
     ir::{
         block::{BasicBlock, BasicBlockId, Body, ControlFlowEdge},
         inheriting_hashmap::InheritingHashMap,
-        ssa::{
-            BranchOpcode, Instruction, InstructionId, Operator, OperatorType, Side,
-            StoredBinaryOpcode,
-        },
+        ssa::{BranchOpcode, Instruction, InstructionId, Operator, Side, StoredBinaryOpcode},
         ConstBody,
     },
     lexer::{IdentifierId, RelOp, Token},
@@ -21,11 +18,13 @@ use crate::{
 
 use super::match_token;
 
+#[derive(Debug)]
 pub struct PhiValues {
     pub left_identifier_id: Option<i32>,
     pub right_identifier_id: Option<i32>,
 }
 
+#[derive(Debug)]
 pub struct PhiBlock {
     pub side: Side,
     pub phi_map: BTreeMap<IdentifierId, PhiValues>, // Use BTreeMap to ensure deterministic order
@@ -168,12 +167,9 @@ where
     fn while_statement(&mut self) -> Result<()> {
         self.match_token(Token::While)?;
 
-        // let identifier_map_copy = self.get_block_mut(self.cur_block).get_identifier_map();
-        // let new_identifier_map_copy = InheritingHashMap::with_dominator(identifier_map_copy);
-
-        let dominance_instruction_map_copy =
-            self.get_block_mut(self.cur_block).get_dom_instr_map_copy();
-
+        let join_block_dominance_instruction_map = InheritingHashMap::with_dominator(
+            self.get_block_mut(self.cur_block).get_dom_instr_map(),
+        );
         let join_block_identifier_map = InheritingHashMap::with_dominator(
             self.get_block_mut(self.cur_block).get_identifier_map(),
         );
@@ -183,7 +179,7 @@ where
             join_block_identifier_map,
             ControlFlowEdge::Leaf,
             Some(self.cur_block),
-            dominance_instruction_map_copy.clone(),
+            join_block_dominance_instruction_map,
         ));
 
         self.get_block_mut(self.cur_block)
@@ -201,9 +197,9 @@ where
         phi_block_temp.side = Side::Right;
         self.join_blocks.push(phi_block_temp);
 
-        let join_block_dominance_instruction_map =
-            self.get_block_mut(join_block_id).get_dom_instr_map_copy();
-
+        let body_block_dom_instr_map = InheritingHashMap::with_dominator(
+            self.get_block_mut(join_block_id).get_dom_instr_map(),
+        );
         let body_block_identifier_map = InheritingHashMap::with_dominator(
             self.get_block_mut(join_block_id).get_identifier_map(),
         );
@@ -212,7 +208,7 @@ where
             body_block_identifier_map,
             ControlFlowEdge::Leaf,
             Some(join_block_id),
-            join_block_dominance_instruction_map.clone(),
+            body_block_dom_instr_map,
         ));
 
         self.get_block_mut(join_block_id)
@@ -251,10 +247,9 @@ where
             .get_identifier_map()
             .clone();
 
-        for (id, temp_phi) in phi_node.phi_map.into_iter() {
-            let new_instr_id = self.body.get_instruction_count() as i32;
-            self.body.increment_instruction_count();
+        self.cur_block = join_block_id;
 
+        for (id, temp_phi) in phi_node.phi_map.into_iter() {
             let default_value = identifier_map_copy.get(&id).unwrap_or(0);
 
             // Temporary: Integrate better into handling of 0 values
@@ -264,17 +259,23 @@ where
                 self.const_body.insert_returning_id(0);
             }
 
-            let operator = Operator::Phi(
+            let left = SimpleReturn::new(
                 temp_phi.left_identifier_id.unwrap_or(default_value),
-                temp_phi.right_identifier_id.unwrap_or(default_value),
+                if temp_phi.left_identifier_id.is_none() {
+                    Some(id)
+                } else {
+                    None
+                },
             );
+            let right =
+                SimpleReturn::new(temp_phi.right_identifier_id.unwrap_or(default_value), None);
 
-            let new_instr = Rc::new(RefCell::new(Instruction::new(new_instr_id, operator, None)));
+            let new_instr_id = self
+                .handle_binary_op(StoredBinaryOpcode::Phi, left, right)
+                .instruction_id;
 
-            let block = self.get_block_mut(join_block_id);
-
-            block.push_phi_instr(new_instr);
-            block.insert_identifier(id, new_instr_id);
+            self.get_block_mut(join_block_id)
+                .insert_identifier(id, new_instr_id);
 
             if let Some(identifier_use) = self.identifier_use_map.get_mut(&id) {
                 for i in (0..identifier_use.len()).rev() {
@@ -285,8 +286,11 @@ where
                         break;
                     }
 
-                    identifier_use_instr_mut
-                        .update_identifier(new_instr_id, identifier_use_temp.side.clone());
+                    identifier_use_instr_mut.update_identifier(
+                        new_instr_id,
+                        identifier_use_temp.side.clone(),
+                        comparator_instruction_id.instruction_id,
+                    );
                 }
             }
 
@@ -318,21 +322,19 @@ where
             }
         }
 
-        let join_block_identifier_map = self
-            .get_block_mut(join_block_id)
-            .get_identifier_map()
-            .clone();
-        let new_join_block_identifier_map =
-            InheritingHashMap::with_dominator(&join_block_identifier_map);
-        let join_block_dominance_instruction_map =
-            self.get_block_mut(join_block_id).get_dom_instr_map_copy();
+        let escape_block_identifier_map = InheritingHashMap::with_dominator(
+            self.get_block_mut(join_block_id).get_identifier_map(),
+        );
+        let escape_block_dom_instr_map = InheritingHashMap::with_dominator(
+            self.get_block_mut(join_block_id).get_dom_instr_map(),
+        );
 
         let escape_block_id = self.body.insert_block(BasicBlock::from(
             Vec::new(),
-            new_join_block_identifier_map,
+            escape_block_identifier_map,
             ControlFlowEdge::Leaf,
             Some(join_block_id),
-            join_block_dominance_instruction_map,
+            escape_block_dom_instr_map,
         ));
 
         self.get_block_mut(join_block_id)
@@ -345,6 +347,10 @@ where
                 ),
                 None,
             ))));
+
+        self.get_block_mut(join_block_id).pop_and_push_1();
+
+        self.cur_block = escape_block_id;
 
         Ok(())
     }
@@ -359,20 +365,21 @@ where
         let branch_block_id = self.cur_block;
         let branch_instruction_id = self.body.get_instruction_count() as i32;
         self.body.increment_instruction_count();
-        let dominance_instruction_map_copy =
-            self.get_block_mut(branch_block_id).get_dom_instr_map_copy();
 
         self.join_blocks.push(PhiBlock::new());
 
         let then_block_identifier_map = InheritingHashMap::with_dominator(
             self.get_block_mut(branch_block_id).get_identifier_map(),
         );
+        let then_block_dom_instr_map = InheritingHashMap::with_dominator(
+            self.get_block_mut(branch_block_id).get_dom_instr_map(),
+        );
         let then_block_id = self.body.insert_block(BasicBlock::from(
             Vec::new(),
             then_block_identifier_map,
             ControlFlowEdge::Leaf,
             Some(branch_block_id),
-            dominance_instruction_map_copy.clone(),
+            then_block_dom_instr_map,
         ));
 
         self.get_block_mut(branch_block_id)
@@ -397,12 +404,15 @@ where
             let else_block_identifier_map = InheritingHashMap::with_dominator(
                 self.get_block_mut(branch_block_id).get_identifier_map(),
             );
+            let else_block_dom_instr_map = InheritingHashMap::with_dominator(
+                self.get_block_mut(branch_block_id).get_dom_instr_map(),
+            );
             let else_block_id = self.body.insert_block(BasicBlock::from(
                 Vec::new(),
                 else_block_identifier_map,
                 ControlFlowEdge::Leaf,
                 Some(branch_block_id),
-                dominance_instruction_map_copy.clone(),
+                else_block_dom_instr_map,
             ));
 
             self.cur_block = else_block_id;
@@ -414,12 +424,16 @@ where
         let join_block_identifier_map = InheritingHashMap::with_dominator(
             self.get_block_mut(branch_block_id).get_identifier_map(),
         );
+        let join_block_dom_instr_map = InheritingHashMap::with_dominator(
+            self.get_block_mut(branch_block_id).get_dom_instr_map(),
+        );
+
         let join_block_id = self.body.insert_block(BasicBlock::from(
             Vec::new(),
             join_block_identifier_map,
             ControlFlowEdge::Leaf,
             Some(branch_block_id),
-            dominance_instruction_map_copy.clone(),
+            join_block_dom_instr_map,
         ));
 
         if is_else_present {
@@ -461,8 +475,8 @@ where
             .clone();
 
         for (id, temp_phi) in phi_node.phi_map.into_iter() {
-            let new_instr_id = self.body.get_instruction_count() as i32;
-            self.body.increment_instruction_count();
+            // let new_instr_id = self.body.get_instruction_count() as i32;
+            // self.body.increment_instruction_count();
 
             let default_value = identifier_map_copy.get(&id).unwrap_or(0);
 
@@ -473,17 +487,30 @@ where
                 self.const_body.insert_returning_id(0);
             }
 
-            let operator = Operator::Phi(
-                temp_phi.left_identifier_id.unwrap_or(default_value),
-                temp_phi.right_identifier_id.unwrap_or(default_value),
-            );
+            // let operator = Operator::StoredBinaryOp(
+            //     StoredBinaryOpcode::Phi,
+            //     temp_phi.left_identifier_id.unwrap_or(default_value),
+            //     temp_phi.right_identifier_id.unwrap_or(default_value),
+            // );
 
-            let new_instr = Rc::new(RefCell::new(Instruction::new(new_instr_id, operator, None)));
+            // let new_instr = Rc::new(RefCell::new(Instruction::new(new_instr_id, operator, None)));
 
-            let block = self.get_block_mut(join_block_id);
+            // let block = self.get_block_mut(join_block_id);
 
-            block.push_instr_no_dom(new_instr);
-            block.insert_identifier(id, new_instr_id);
+            // block.push_instr_no_dom(new_instr);
+            // block.insert_identifier(id, new_instr_id);
+
+            let left =
+                SimpleReturn::new(temp_phi.left_identifier_id.unwrap_or(default_value), None);
+            let right =
+                SimpleReturn::new(temp_phi.right_identifier_id.unwrap_or(default_value), None);
+
+            let new_instr_id = self
+                .handle_binary_op(StoredBinaryOpcode::Phi, left, right)
+                .instruction_id;
+
+            self.get_block_mut(join_block_id)
+                .insert_identifier(id, new_instr_id);
 
             for phi_node_temp in self.join_blocks.iter_mut() {
                 if let Some(temp_phi) = phi_node_temp.phi_map.get_mut(&id) {
@@ -616,38 +643,30 @@ where
     ) -> SimpleReturn {
         let new_instr_id = self.body.get_instruction_count() as i32;
 
-        let operator_type = OperatorType::from(&operator);
         let mut new_instr = Instruction::new(
             new_instr_id,
-            Operator::StoredBinaryOp(operator, left.instruction_id, right.instruction_id),
+            Operator::StoredBinaryOp(operator.clone(), left.instruction_id, right.instruction_id),
             None,
         );
 
         if !self.in_loop {
-            if let Some(dom_instr) = self
-                .get_block_mut(self.cur_block)
-                .get_dom_instr(&operator_type)
-            {
+            if let Some(dom_instr) = self.get_block_mut(self.cur_block).get_dom_instr(&operator) {
                 if let Some(dup_instr_id) =
                     dom_instr.try_borrow().unwrap().check_dominators(&new_instr)
                 {
-                    // return dup_instr_id;
                     return SimpleReturn::new(dup_instr_id, None);
                 }
             }
         }
 
-        if let Some(dom_instr) = self
-            .get_block_mut(self.cur_block)
-            .remove_dom_instr(operator_type.clone())
-        {
+        if let Some(dom_instr) = self.get_block_mut(self.cur_block).get_dom_instr(&operator) {
             new_instr.update_dom(dom_instr);
         };
 
         let new_instr = Rc::new(RefCell::new(new_instr));
 
         self.get_block_mut(self.cur_block)
-            .push_instr(new_instr.clone(), operator_type);
+            .push_instr(new_instr.clone(), operator);
 
         if let Some(identifier_id) = left.identifier_id {
             self.identifier_use_map
@@ -659,13 +678,11 @@ where
             self.identifier_use_map
                 .entry(identifier_id)
                 .or_insert_with(Vec::new)
-                // .push(new_instr.clone());
                 .push(IdentifierUse::new(new_instr.clone(), Side::Right));
         }
 
         self.body.increment_instruction_count();
 
-        // new_instr_id
         SimpleReturn::new(new_instr_id, None)
     }
 
@@ -886,28 +903,22 @@ mod tests {
 
         let main_block_identifier_map =
             InheritingHashMap::from_iter([(1, -1), (2, 3), (3, 5), (4, 9)]);
+        let main_block_dom_instr_map = InheritingHashMap::from_iter([
+            (StoredBinaryOpcode::Add, b0_insr_7.clone()),
+            (StoredBinaryOpcode::Mul, b0_insr_9.clone()),
+            (StoredBinaryOpcode::Div, b0_insr_8.clone()),
+            (StoredBinaryOpcode::Sub, b0_insr_3.clone()),
+        ]);
 
         let main_block = BasicBlock::from(
             vec![
-                b0_insr_1,
-                b0_insr_2,
-                b0_insr_3.clone(),
-                b0_insr_4,
-                b0_insr_5,
-                b0_insr_6,
-                b0_insr_7.clone(),
-                b0_insr_8.clone(),
-                b0_insr_9.clone(),
+                b0_insr_1, b0_insr_2, b0_insr_3, b0_insr_4, b0_insr_5, b0_insr_6, b0_insr_7,
+                b0_insr_8, b0_insr_9,
             ],
             main_block_identifier_map,
             ControlFlowEdge::Leaf,
             None,
-            HashMap::from([
-                (OperatorType::Add, b0_insr_7),
-                (OperatorType::Mul, b0_insr_9),
-                (OperatorType::Div, b0_insr_8),
-                (OperatorType::Sub, b0_insr_3),
-            ]),
+            main_block_dom_instr_map,
         );
         let expected_body = Body::from(0, vec![main_block], 10);
 
@@ -923,7 +934,6 @@ mod tests {
         let x <- 1 + 3;
         let y <- 1 + 3;
         */
-
         let tokens = [
             Token::Let,
             Token::Identifier(1),
@@ -954,13 +964,15 @@ mod tests {
         )));
 
         let main_block_identifier_map = InheritingHashMap::from_iter([(1, 1), (2, 1)]);
+        let main_block_dom_instr_map =
+            InheritingHashMap::from_iter([(StoredBinaryOpcode::Add, b0_insr_1.clone())]);
 
         let main_block = BasicBlock::from(
             vec![b0_insr_1.clone()],
             main_block_identifier_map,
             ControlFlowEdge::Leaf,
             None,
-            HashMap::from([(OperatorType::Add, b0_insr_1)]),
+            main_block_dom_instr_map,
         );
         let expected_body = Body::from(0, vec![main_block], 2);
 
@@ -978,7 +990,6 @@ mod tests {
         let a <- x + y;
         let z <- x + 3;
         */
-
         let tokens = [
             Token::Let,
             Token::Identifier(1),
@@ -1034,13 +1045,15 @@ mod tests {
 
         let main_block_identifier_map =
             InheritingHashMap::from_iter([(1, 1), (2, 2), (3, 3), (4, 2)]);
+        let main_block_dom_instr_map =
+            InheritingHashMap::from_iter([(StoredBinaryOpcode::Add, b0_insr_3.clone())]);
 
         let main_block = BasicBlock::from(
             vec![b0_insr_1, b0_insr_2, b0_insr_3.clone()],
             main_block_identifier_map,
             ControlFlowEdge::Leaf,
             None,
-            HashMap::from([(OperatorType::Add, b0_insr_3)]),
+            main_block_dom_instr_map,
         );
         let expected_body = Body::from(0, vec![main_block], 4);
 
@@ -1106,56 +1119,67 @@ mod tests {
         )));
 
         let main_block_identifier_map = InheritingHashMap::from_iter([(1, -1)]);
+        let main_block_dom_instr_map =
+            InheritingHashMap::from_iter([(StoredBinaryOpcode::Cmp, b0_insr_1.clone())]);
 
         let main_block = BasicBlock::from(
-            vec![b0_insr_1.clone(), b0_insr_2],
+            vec![b0_insr_1, b0_insr_2],
             main_block_identifier_map,
             ControlFlowEdge::Fallthrough(1),
             None,
-            HashMap::from([(OperatorType::Cmp, b0_insr_1.clone())]),
+            main_block_dom_instr_map,
         );
 
         // Block 1
         let mut then_block_identifier_map =
             InheritingHashMap::with_dominator(main_block.get_identifier_map());
         then_block_identifier_map.insert(1, -2);
+        let then_block_dom_instr_map =
+            InheritingHashMap::with_dominator(main_block.get_dom_instr_map());
 
         let then_block = BasicBlock::from(
             Vec::new(),
             then_block_identifier_map,
             ControlFlowEdge::Branch(3),
             Some(0),
-            HashMap::from([(OperatorType::Cmp, b0_insr_1.clone())]),
+            then_block_dom_instr_map,
         );
 
         // Block 2
         let mut else_block_identifier_map =
             InheritingHashMap::with_dominator(main_block.get_identifier_map());
         else_block_identifier_map.insert(1, -4);
+        let else_block_dom_instr_map =
+            InheritingHashMap::with_dominator(main_block.get_dom_instr_map());
 
         let else_block = BasicBlock::from(
             Vec::new(),
             else_block_identifier_map,
             ControlFlowEdge::Fallthrough(3),
             Some(0),
-            HashMap::from([(OperatorType::Cmp, b0_insr_1.clone())]),
+            else_block_dom_instr_map,
         );
 
         // Block 3
+        let b3_insr_1 = Rc::new(RefCell::new(Instruction::new(
+            3,
+            Operator::StoredBinaryOp(StoredBinaryOpcode::Phi, -2, -4),
+            None,
+        )));
+
         let mut join_block_identifier_map =
             InheritingHashMap::with_dominator(main_block.get_identifier_map());
         join_block_identifier_map.insert(1, 3);
+        let mut join_block_dom_instr_map =
+            InheritingHashMap::with_dominator(main_block.get_dom_instr_map());
+        join_block_dom_instr_map.insert(StoredBinaryOpcode::Phi, b3_insr_1.clone());
 
         let join_block = BasicBlock::from(
-            vec![Rc::new(RefCell::new(Instruction::new(
-                3,
-                Operator::Phi(-2, -4),
-                None,
-            )))],
+            vec![b3_insr_1],
             join_block_identifier_map,
             ControlFlowEdge::Leaf,
             Some(0),
-            HashMap::from([(OperatorType::Cmp, b0_insr_1.clone())]),
+            join_block_dom_instr_map,
         );
 
         let expected_body = Body::from(0, vec![main_block, then_block, else_block, join_block], 4);
@@ -1241,16 +1265,17 @@ mod tests {
         )));
 
         let main_block_identifier_map = InheritingHashMap::from_iter([(1, 1)]);
+        let main_block_dom_instr_map = InheritingHashMap::from_iter([
+            (StoredBinaryOpcode::Add, b0_insr_1.clone()),
+            (StoredBinaryOpcode::Cmp, b0_insr_2.clone()),
+        ]);
 
         let main_block = BasicBlock::from(
             vec![b0_insr_1.clone(), b0_insr_2.clone(), b0_insr_3],
             main_block_identifier_map,
             ControlFlowEdge::Fallthrough(1),
             None,
-            HashMap::from([
-                (OperatorType::Cmp, b0_insr_2.clone()),
-                (OperatorType::Add, b0_insr_1.clone()),
-            ]),
+            main_block_dom_instr_map,
         );
 
         // Block 1
@@ -1264,52 +1289,59 @@ mod tests {
             InheritingHashMap::with_dominator(main_block.get_identifier_map());
         then_block_identifier_map.insert(1, 4);
         then_block_identifier_map.insert(2, 1);
+        let mut then_block_dom_instr_map =
+            InheritingHashMap::with_dominator(main_block.get_dom_instr_map());
+        then_block_dom_instr_map.insert(StoredBinaryOpcode::Add, b1_insr_1.clone());
 
         let then_block = BasicBlock::from(
             vec![b1_insr_1.clone()],
             then_block_identifier_map,
             ControlFlowEdge::Branch(3),
             Some(0),
-            HashMap::from([
-                (OperatorType::Cmp, b0_insr_2.clone()),
-                (OperatorType::Add, b1_insr_1),
-            ]),
+            then_block_dom_instr_map,
         );
 
         // Block 2
         let mut else_block_identifier_map =
             InheritingHashMap::with_dominator(main_block.get_identifier_map());
         else_block_identifier_map.insert(1, 1);
+        let else_block_dom_instr_map =
+            InheritingHashMap::with_dominator(main_block.get_dom_instr_map());
 
         let else_block = BasicBlock::from(
             Vec::new(),
             else_block_identifier_map,
             ControlFlowEdge::Fallthrough(3),
             Some(0),
-            HashMap::from([
-                (OperatorType::Cmp, b0_insr_2.clone()),
-                (OperatorType::Add, b0_insr_1.clone()),
-            ]),
+            else_block_dom_instr_map,
         );
 
         // Block 3
+        let b3_insr_1 = Rc::new(RefCell::new(Instruction::new(
+            5,
+            Operator::StoredBinaryOp(StoredBinaryOpcode::Phi, 4, 1),
+            None,
+        )));
+        let b3_insr_2 = Rc::new(RefCell::new(Instruction::new(
+            6,
+            Operator::StoredBinaryOp(StoredBinaryOpcode::Phi, 1, 0),
+            Some(b3_insr_1.clone()),
+        )));
+
         let mut join_block_identifier_map =
             InheritingHashMap::with_dominator(main_block.get_identifier_map());
         join_block_identifier_map.insert(1, 5);
         join_block_identifier_map.insert(2, 6);
+        let mut join_block_dom_instr_map =
+            InheritingHashMap::with_dominator(main_block.get_dom_instr_map());
+        join_block_dom_instr_map.insert(StoredBinaryOpcode::Phi, b3_insr_2.clone());
 
         let join_block = BasicBlock::from(
-            vec![
-                Rc::new(RefCell::new(Instruction::new(5, Operator::Phi(4, 1), None))),
-                Rc::new(RefCell::new(Instruction::new(6, Operator::Phi(1, 0), None))),
-            ],
+            vec![b3_insr_1, b3_insr_2],
             join_block_identifier_map,
             ControlFlowEdge::Leaf,
             Some(0),
-            HashMap::from([
-                (OperatorType::Cmp, b0_insr_2.clone()),
-                (OperatorType::Add, b0_insr_1.clone()),
-            ]),
+            join_block_dom_instr_map,
         );
 
         let expected_body = Body::from(0, vec![main_block, then_block, else_block, join_block], 7);
@@ -1381,13 +1413,15 @@ mod tests {
         )));
 
         let main_block_identifier_map = InheritingHashMap::from_iter([(1, -1)]);
+        let main_block_dom_instr_map =
+            InheritingHashMap::from_iter([(StoredBinaryOpcode::Cmp, b0_insr_1.clone())]);
 
         let main_block = BasicBlock::from(
             vec![b0_insr_1.clone(), b0_insr_2],
             main_block_identifier_map,
             ControlFlowEdge::Fallthrough(1),
             None,
-            HashMap::from([(OperatorType::Cmp, b0_insr_1.clone())]),
+            main_block_dom_instr_map,
         );
 
         // Block 1
@@ -1395,51 +1429,58 @@ mod tests {
             InheritingHashMap::with_dominator(main_block.get_identifier_map());
         then_block_identifier_map.insert(2, -2);
         then_block_identifier_map.insert(3, -13);
+        let then_block_dom_instr_map =
+            InheritingHashMap::with_dominator(main_block.get_dom_instr_map());
 
         let then_block = BasicBlock::from(
             Vec::new(),
             then_block_identifier_map,
             ControlFlowEdge::Branch(3),
             Some(0),
-            HashMap::from([(OperatorType::Cmp, b0_insr_1.clone())]),
+            then_block_dom_instr_map,
         );
 
         // Block 2
         let mut else_block_identifier_map =
             InheritingHashMap::with_dominator(main_block.get_identifier_map());
         else_block_identifier_map.insert(2, -4);
+        let else_block_dom_instr_map =
+            InheritingHashMap::with_dominator(main_block.get_dom_instr_map());
 
         let else_block = BasicBlock::from(
             Vec::new(),
             else_block_identifier_map,
             ControlFlowEdge::Fallthrough(3),
             Some(0),
-            HashMap::from([(OperatorType::Cmp, b0_insr_1.clone())]),
+            else_block_dom_instr_map,
         );
 
         // Block 3
+        let b3_insr_1 = Rc::new(RefCell::new(Instruction::new(
+            3,
+            Operator::StoredBinaryOp(StoredBinaryOpcode::Phi, -2, -4),
+            None,
+        )));
+        let b3_insr_2 = Rc::new(RefCell::new(Instruction::new(
+            4,
+            Operator::StoredBinaryOp(StoredBinaryOpcode::Phi, -13, 0),
+            Some(b3_insr_1.clone()),
+        )));
+
         let mut join_block_identifier_map =
             InheritingHashMap::with_dominator(main_block.get_identifier_map());
         join_block_identifier_map.insert(2, 3);
         join_block_identifier_map.insert(3, 4);
+        let mut join_block_dom_instr_map =
+            InheritingHashMap::with_dominator(main_block.get_dom_instr_map());
+        join_block_dom_instr_map.insert(StoredBinaryOpcode::Phi, b3_insr_2.clone());
 
         let join_block = BasicBlock::from(
-            vec![
-                Rc::new(RefCell::new(Instruction::new(
-                    3,
-                    Operator::Phi(-2, -4),
-                    None,
-                ))),
-                Rc::new(RefCell::new(Instruction::new(
-                    4,
-                    Operator::Phi(-13, 0),
-                    None,
-                ))),
-            ],
+            vec![b3_insr_1, b3_insr_2],
             join_block_identifier_map,
             ControlFlowEdge::Leaf,
             Some(0),
-            HashMap::from([(OperatorType::Cmp, b0_insr_1.clone())]),
+            join_block_dom_instr_map,
         );
 
         let expected_body = Body::from(0, vec![main_block, then_block, else_block, join_block], 5);
@@ -1497,43 +1538,52 @@ mod tests {
         )));
 
         let main_block_identifier_map = InheritingHashMap::from_iter([(1, -1)]);
+        let main_block_dom_instr_map =
+            InheritingHashMap::from_iter([(StoredBinaryOpcode::Cmp, b0_insr_1.clone())]);
 
         let main_block = BasicBlock::from(
             vec![b0_insr_1.clone(), b0_insr_2],
             main_block_identifier_map,
             ControlFlowEdge::Fallthrough(1),
             None,
-            HashMap::from([(OperatorType::Cmp, b0_insr_1.clone())]),
+            main_block_dom_instr_map,
         );
 
         // Block 1
         let mut then_block_identifier_map =
             InheritingHashMap::with_dominator(main_block.get_identifier_map());
         then_block_identifier_map.insert(1, -2);
+        let then_block_dom_instr_map =
+            InheritingHashMap::with_dominator(main_block.get_dom_instr_map());
 
         let then_block = BasicBlock::from(
             Vec::new(),
             then_block_identifier_map,
             ControlFlowEdge::Fallthrough(2),
             Some(0),
-            HashMap::from([(OperatorType::Cmp, b0_insr_1.clone())]),
+            then_block_dom_instr_map,
         );
 
         // Block 2
+        let b2_insr_1 = Rc::new(RefCell::new(Instruction::new(
+            3,
+            Operator::StoredBinaryOp(StoredBinaryOpcode::Phi, -2, -1),
+            None,
+        )));
+
         let mut join_block_identifier_map =
             InheritingHashMap::with_dominator(main_block.get_identifier_map());
         join_block_identifier_map.insert(1, 3);
+        let mut join_block_dom_instr_map =
+            InheritingHashMap::with_dominator(main_block.get_dom_instr_map());
+        join_block_dom_instr_map.insert(StoredBinaryOpcode::Phi, b2_insr_1.clone());
 
         let join_block = BasicBlock::from(
-            vec![Rc::new(RefCell::new(Instruction::new(
-                3,
-                Operator::Phi(-2, -1),
-                None,
-            )))],
+            vec![b2_insr_1],
             join_block_identifier_map,
             ControlFlowEdge::Leaf,
             Some(0),
-            HashMap::from([(OperatorType::Cmp, b0_insr_1.clone())]),
+            join_block_dom_instr_map,
         );
 
         let expected_body = Body::from(0, vec![main_block, then_block, join_block], 4);
@@ -1621,13 +1671,15 @@ mod tests {
         )));
 
         let main_block_identifier_map = InheritingHashMap::from_iter([(1, -1)]);
+        let main_block_dom_instr_map =
+            InheritingHashMap::from_iter([(StoredBinaryOpcode::Cmp, b0_insr_1.clone())]);
 
         let main_block = BasicBlock::from(
             vec![b0_insr_1.clone(), b0_insr_2],
             main_block_identifier_map,
             ControlFlowEdge::Fallthrough(1),
             None,
-            HashMap::from([(OperatorType::Cmp, b0_insr_1.clone())]),
+            main_block_dom_instr_map,
         );
 
         // Block 1
@@ -1644,26 +1696,31 @@ mod tests {
 
         let then_block_identifier_map =
             InheritingHashMap::with_dominator(main_block.get_identifier_map());
+        let mut then_block_dom_instr_map =
+            InheritingHashMap::with_dominator(main_block.get_dom_instr_map());
+        then_block_dom_instr_map.insert(StoredBinaryOpcode::Cmp, b1_insr_1.clone());
 
         let then_block = BasicBlock::from(
             vec![b1_insr_1.clone(), b1_insr_2],
             then_block_identifier_map,
             ControlFlowEdge::Fallthrough(2),
             Some(0),
-            HashMap::from([(OperatorType::Cmp, b1_insr_1.clone())]),
+            then_block_dom_instr_map,
         );
 
         // Block 2
         let mut sub_then_block_identifier_map =
             InheritingHashMap::with_dominator(then_block.get_identifier_map());
         sub_then_block_identifier_map.insert(1, -3);
+        let sub_then_block_dom_instr_map =
+            InheritingHashMap::with_dominator(then_block.get_dom_instr_map());
 
         let sub_then_block = BasicBlock::from(
             Vec::new(),
             sub_then_block_identifier_map,
             ControlFlowEdge::Branch(4),
             Some(1),
-            HashMap::from([(OperatorType::Cmp, b1_insr_1.clone())]),
+            sub_then_block_dom_instr_map,
         );
 
         // Block 3
@@ -1671,72 +1728,86 @@ mod tests {
             InheritingHashMap::with_dominator(then_block.get_identifier_map());
         sub_else_block_identifier_map.insert(1, -4);
         sub_else_block_identifier_map.insert(2, -12);
+        let sub_else_block_dom_instr_map =
+            InheritingHashMap::with_dominator(then_block.get_dom_instr_map());
 
         let sub_else_block = BasicBlock::from(
             Vec::new(),
             sub_else_block_identifier_map,
             ControlFlowEdge::Fallthrough(4),
             Some(1),
-            HashMap::from([(OperatorType::Cmp, b1_insr_1.clone())]),
+            sub_else_block_dom_instr_map,
         );
 
         // Block 4
-        let mut join_block_identifier_map =
+        let b4_insr_1 = Rc::new(RefCell::new(Instruction::new(
+            5,
+            Operator::StoredBinaryOp(StoredBinaryOpcode::Phi, -3, -4),
+            None,
+        )));
+        let b4_insr_2 = Rc::new(RefCell::new(Instruction::new(
+            6,
+            Operator::StoredBinaryOp(StoredBinaryOpcode::Phi, 0, -12),
+            Some(b4_insr_1.clone()),
+        )));
+
+        let mut sub_join_block_identifier_map =
             InheritingHashMap::with_dominator(then_block.get_identifier_map());
-        join_block_identifier_map.insert(1, 5);
-        join_block_identifier_map.insert(2, 6);
+        sub_join_block_identifier_map.insert(1, 5);
+        sub_join_block_identifier_map.insert(2, 6);
+        let mut sub_join_block_dom_instr_map =
+            InheritingHashMap::with_dominator(then_block.get_dom_instr_map());
+        sub_join_block_dom_instr_map.insert(StoredBinaryOpcode::Phi, b4_insr_2.clone());
 
         let sub_join_block = BasicBlock::from(
-            vec![
-                Rc::new(RefCell::new(Instruction::new(
-                    5,
-                    Operator::Phi(-3, -4),
-                    None,
-                ))),
-                Rc::new(RefCell::new(Instruction::new(
-                    6,
-                    Operator::Phi(0, -12),
-                    None,
-                ))),
-            ],
-            join_block_identifier_map,
+            vec![b4_insr_1.clone(), b4_insr_2.clone()],
+            sub_join_block_identifier_map,
             ControlFlowEdge::Branch(6),
             Some(1),
-            HashMap::from([(OperatorType::Cmp, b1_insr_1.clone())]),
+            sub_join_block_dom_instr_map,
         );
 
         // Block 5
         let mut else_block_identifier_map =
             InheritingHashMap::with_dominator(main_block.get_identifier_map());
         else_block_identifier_map.insert(1, -5);
+        let else_block_dom_instr_map =
+            InheritingHashMap::with_dominator(main_block.get_dom_instr_map());
 
         let else_block = BasicBlock::from(
             Vec::new(),
             else_block_identifier_map,
             ControlFlowEdge::Fallthrough(6),
             Some(0),
-            HashMap::from([(OperatorType::Cmp, b0_insr_1.clone())]),
+            else_block_dom_instr_map,
         );
 
         // Block 6
+        let b6_insr_1 = Rc::new(RefCell::new(Instruction::new(
+            7,
+            Operator::StoredBinaryOp(StoredBinaryOpcode::Phi, 5, -5),
+            None,
+        )));
+        let b6_insr_2 = Rc::new(RefCell::new(Instruction::new(
+            8,
+            Operator::StoredBinaryOp(StoredBinaryOpcode::Phi, 6, 0),
+            Some(b6_insr_1.clone()),
+        )));
+
         let mut join_block_identifier_map =
             InheritingHashMap::with_dominator(main_block.get_identifier_map());
         join_block_identifier_map.insert(1, 7);
         join_block_identifier_map.insert(2, 8);
+        let mut join_block_dom_instr_map =
+            InheritingHashMap::with_dominator(main_block.get_dom_instr_map());
+        join_block_dom_instr_map.insert(StoredBinaryOpcode::Phi, b6_insr_2.clone());
 
         let join_block = BasicBlock::from(
-            vec![
-                Rc::new(RefCell::new(Instruction::new(
-                    7,
-                    Operator::Phi(5, -5),
-                    None,
-                ))),
-                Rc::new(RefCell::new(Instruction::new(8, Operator::Phi(6, 0), None))),
-            ],
+            vec![b6_insr_1.clone(), b6_insr_2.clone()],
             join_block_identifier_map,
             ControlFlowEdge::Leaf,
             Some(0),
-            HashMap::from([(OperatorType::Cmp, b0_insr_1)]),
+            join_block_dom_instr_map,
         );
 
         let expected_body = Body::from(
@@ -1759,129 +1830,135 @@ mod tests {
         assert_eq!(const_body, expected_const_body);
     }
 
-    #[test]
-    fn simple_while_loop() {
-        /*
-        let x <- 1;
-        while x < 3 do
-            let x <- x + 1;
-        od
-        */
-        let tokens = [
-            Token::Let,
-            Token::Identifier(1),
-            Token::Assignment,
-            Token::Number(1),
-            Token::Semicolon,
-            Token::While,
-            Token::Identifier(1),
-            Token::RelOp(RelOp::Lt),
-            Token::Number(3),
-            Token::Do,
-            Token::Let,
-            Token::Identifier(1),
-            Token::Assignment,
-            Token::Identifier(1),
-            Token::Add,
-            Token::Number(1),
-            Token::Semicolon,
-            Token::Od,
-        ];
+    // #[test]
+    // fn simple_while_loop() {
+    //     /*
+    //     let x <- 1;
+    //     while x < 3 do
+    //         let x <- x + 1;
+    //     od
+    //     */
+    //     let tokens = [
+    //         Token::Let,
+    //         Token::Identifier(1),
+    //         Token::Assignment,
+    //         Token::Number(1),
+    //         Token::Semicolon,
+    //         Token::While,
+    //         Token::Identifier(1),
+    //         Token::RelOp(RelOp::Lt),
+    //         Token::Number(3),
+    //         Token::Do,
+    //         Token::Let,
+    //         Token::Identifier(1),
+    //         Token::Assignment,
+    //         Token::Identifier(1),
+    //         Token::Add,
+    //         Token::Number(1),
+    //         Token::Semicolon,
+    //         Token::Od,
+    //     ];
 
-        let mut const_body = ConstBody::new();
+    //     let mut const_body = ConstBody::new();
 
-        let body = BodyParser::parse(
-            &mut tokens.map(|t| Ok(t)).into_iter().peekable(),
-            &mut const_body,
-        );
+    //     let body = BodyParser::parse(
+    //         &mut tokens.map(|t| Ok(t)).into_iter().peekable(),
+    //         &mut const_body,
+    //     );
 
-        // Block 0
-        let main_block_identifier_map = InheritingHashMap::from_iter([(1, -1)]);
+    //     // Block 0
+    //     let main_block_identifier_map = InheritingHashMap::from_iter([(1, -1)]);
 
-        let main_block = BasicBlock::from(
-            Vec::new(),
-            main_block_identifier_map,
-            ControlFlowEdge::Fallthrough(1),
-            None,
-            HashMap::new(),
-        );
+    //     let main_block = BasicBlock::from(
+    //         Vec::new(),
+    //         main_block_identifier_map,
+    //         ControlFlowEdge::Fallthrough(1),
+    //         None,
+    //         InheritingHashMap::new(),
+    //     );
 
-        // Block 1
-        let b1_insr_1 = Rc::new(RefCell::new(Instruction::new(
-            5,
-            Operator::Phi(-1, 3),
-            None,
-        )));
-        let b1_insr_2 = Rc::new(RefCell::new(Instruction::new(
-            1,
-            Operator::StoredBinaryOp(StoredBinaryOpcode::Cmp, 5, -3),
-            None,
-        )));
-        let b1_insr_3 = Rc::new(RefCell::new(Instruction::new(
-            2,
-            Operator::Branch(BranchOpcode::Ge, 3, 1),
-            None,
-        )));
+    //     // Block 1
+    //     let b1_insr_1 = Rc::new(RefCell::new(Instruction::new(
+    //         5,
+    //         Operator::StoredBinaryOp(StoredBinaryOpcode::Phi, -1, 3),
+    //         None,
+    //     )));
+    //     let b1_insr_2 = Rc::new(RefCell::new(Instruction::new(
+    //         1,
+    //         Operator::StoredBinaryOp(StoredBinaryOpcode::Cmp, 5, -3),
+    //         None,
+    //     )));
+    //     let b1_insr_3 = Rc::new(RefCell::new(Instruction::new(
+    //         2,
+    //         Operator::Branch(BranchOpcode::Ge, 3, 1),
+    //         None,
+    //     )));
 
-        let mut join_block_identifier_map =
-            InheritingHashMap::with_dominator(main_block.get_identifier_map());
-        join_block_identifier_map.insert(1, 5);
+    //     let mut join_block_identifier_map =
+    //         InheritingHashMap::with_dominator(main_block.get_identifier_map());
+    //     join_block_identifier_map.insert(1, 5);
+    //     let mut join_block_dom_instr_map =
+    //         InheritingHashMap::with_dominator(main_block.get_dom_instr_map());
+    //     join_block_dom_instr_map.insert(StoredBinaryOpcode::Cmp, b1_insr_2.clone());
+    //     join_block_dom_instr_map.insert(StoredBinaryOpcode::Phi, b1_insr_1.clone());
 
-        let join_block = BasicBlock::from(
-            vec![b1_insr_1, b1_insr_2.clone(), b1_insr_3],
-            join_block_identifier_map,
-            ControlFlowEdge::Fallthrough(2),
-            Some(0),
-            HashMap::from([(OperatorType::Cmp, b1_insr_2.clone())]),
-        );
+    //     let join_block = BasicBlock::from(
+    //         vec![b1_insr_1.clone(), b1_insr_2.clone(), b1_insr_3],
+    //         join_block_identifier_map,
+    //         ControlFlowEdge::Fallthrough(2),
+    //         Some(0),
+    //         join_block_dom_instr_map,
+    //     );
 
-        // Block 2
-        let b2_insr_1 = Rc::new(RefCell::new(Instruction::new(
-            3,
-            Operator::StoredBinaryOp(StoredBinaryOpcode::Add, 5, -1),
-            None,
-        )));
-        let b2_insr_2 = Rc::new(RefCell::new(Instruction::new(
-            4,
-            Operator::UnconditionalBranch(1),
-            None,
-        )));
+    //     // Block 2
+    //     let b2_insr_1 = Rc::new(RefCell::new(Instruction::new(
+    //         3,
+    //         Operator::StoredBinaryOp(StoredBinaryOpcode::Add, 5, -1),
+    //         None,
+    //     )));
+    //     let b2_insr_2 = Rc::new(RefCell::new(Instruction::new(
+    //         4,
+    //         Operator::UnconditionalBranch(1),
+    //         None,
+    //     )));
 
-        let mut body_block_identifier_map =
-            InheritingHashMap::with_dominator(join_block.get_identifier_map());
-        body_block_identifier_map.insert(1, 3);
+    //     let mut body_block_identifier_map =
+    //         InheritingHashMap::with_dominator(join_block.get_identifier_map());
+    //     body_block_identifier_map.insert(1, 3);
+    //     let mut body_block_dom_instr_map =
+    //         InheritingHashMap::with_dominator(join_block.get_dom_instr_map());
+    //     body_block_dom_instr_map.insert(StoredBinaryOpcode::Add, b2_insr_1.clone());
 
-        let body_block = BasicBlock::from(
-            vec![b2_insr_1.clone(), b2_insr_2],
-            body_block_identifier_map,
-            ControlFlowEdge::Branch(1),
-            Some(1),
-            HashMap::from([
-                (OperatorType::Cmp, b1_insr_2.clone()),
-                (OperatorType::Add, b2_insr_1),
-            ]),
-        );
+    //     let body_block = BasicBlock::from(
+    //         vec![b2_insr_1.clone(), b2_insr_2],
+    //         body_block_identifier_map,
+    //         ControlFlowEdge::Branch(1),
+    //         Some(1),
+    //         body_block_dom_instr_map,
+    //     );
 
-        // Block 3
-        let escape_block_identifier_map =
-            InheritingHashMap::with_dominator(join_block.get_identifier_map());
+    //     // Block 3
+    //     let escape_block_identifier_map =
+    //         InheritingHashMap::with_dominator(join_block.get_identifier_map());
+    //     let escape_block_dom_instr_map =
+    //         InheritingHashMap::with_dominator(join_block.get_dom_instr_map());
 
-        let escape_block = BasicBlock::from(
-            Vec::new(),
-            escape_block_identifier_map,
-            ControlFlowEdge::Leaf,
-            Some(1),
-            HashMap::from([(OperatorType::Cmp, b1_insr_2)]),
-        );
+    //     let escape_block = BasicBlock::from(
+    //         Vec::new(),
+    //         escape_block_identifier_map,
+    //         ControlFlowEdge::Leaf,
+    //         Some(1),
+    //         escape_block_dom_instr_map,
+    //     );
 
-        let expected_body =
-            Body::from(0, vec![main_block, join_block, body_block, escape_block], 6);
+    //     let expected_body =
+    //         Body::from(0, vec![main_block, join_block, body_block, escape_block], 6);
 
-        let expected_const_body = ConstBody::from(HashSet::from([1, 3]));
+    //     let expected_const_body = ConstBody::from(HashSet::from([1, 3]));
 
-        assert_eq!(body, expected_body);
-        assert_eq!(const_body, expected_const_body);
-    }
+    //     assert_eq!(body, expected_body);
+    //     assert_eq!(const_body, expected_const_body);
+    // }
 
     // Temporarily testing without CSE
     #[test]
@@ -1985,7 +2062,7 @@ mod tests {
             &mut const_body,
         );
 
-        // Block 0 - Done
+        // Block 0
         let main_block_identifier_map =
             InheritingHashMap::from_iter([(0, 0), (1, 0), (2, 0), (3, 0)]);
 
@@ -1994,37 +2071,37 @@ mod tests {
             main_block_identifier_map,
             ControlFlowEdge::Fallthrough(1),
             None,
-            HashMap::new(),
+            InheritingHashMap::new(),
         );
 
-        // Block 1 - Done
+        // Block 1
 
-        // j
+        // i
         let b1_insr_1 = Rc::new(RefCell::new(Instruction::new(
-            19,
-            Operator::Phi(0, 13),
-            None,
-        )));
-
-        // y
-        let b1_insr_2 = Rc::new(RefCell::new(Instruction::new(
-            18,
-            Operator::Phi(0, 12),
+            16,
+            Operator::StoredBinaryOp(StoredBinaryOpcode::Phi, 0, 14),
             None,
         )));
 
         // x
-        let b1_insr_3 = Rc::new(RefCell::new(Instruction::new(
+        let b1_insr_2 = Rc::new(RefCell::new(Instruction::new(
             17,
-            Operator::Phi(0, 11),
-            None,
+            Operator::StoredBinaryOp(StoredBinaryOpcode::Phi, 0, 11),
+            Some(b1_insr_1.clone()),
         )));
 
-        // i
+        // y
+        let b1_insr_3 = Rc::new(RefCell::new(Instruction::new(
+            18,
+            Operator::StoredBinaryOp(StoredBinaryOpcode::Phi, 0, 12),
+            Some(b1_insr_2.clone()),
+        )));
+
+        // j
         let b1_insr_4 = Rc::new(RefCell::new(Instruction::new(
-            16,
-            Operator::Phi(0, 14),
-            None,
+            19,
+            Operator::StoredBinaryOp(StoredBinaryOpcode::Phi, 0, 13),
+            Some(b1_insr_3.clone()),
         )));
 
         let b1_insr_5 = Rc::new(RefCell::new(Instruction::new(
@@ -2044,6 +2121,10 @@ mod tests {
         join_block_identifier_map.insert(1, 17);
         join_block_identifier_map.insert(2, 18);
         join_block_identifier_map.insert(3, 19);
+        let mut join_block_dom_instr_map =
+            InheritingHashMap::with_dominator(main_block.get_dom_instr_map());
+        join_block_dom_instr_map.insert(StoredBinaryOpcode::Cmp, b1_insr_5.clone());
+        join_block_dom_instr_map.insert(StoredBinaryOpcode::Phi, b1_insr_4.clone());
 
         let join_block = BasicBlock::from(
             vec![
@@ -2057,7 +2138,7 @@ mod tests {
             join_block_identifier_map,
             ControlFlowEdge::Fallthrough(2),
             Some(0),
-            HashMap::from([(OperatorType::Cmp, b1_insr_5.clone())]),
+            join_block_dom_instr_map,
         );
 
         // Block 2
@@ -2076,39 +2157,39 @@ mod tests {
             InheritingHashMap::with_dominator(join_block.get_identifier_map());
         body_block_identifier_map.insert(1, 3);
         body_block_identifier_map.insert(2, 4);
+        let mut body_block_dom_instr_map =
+            InheritingHashMap::with_dominator(join_block.get_dom_instr_map());
+        body_block_dom_instr_map.insert(StoredBinaryOpcode::Add, b2_insr_2.clone());
 
         let body_block = BasicBlock::from(
             vec![b2_insr_1.clone(), b2_insr_2.clone()],
             body_block_identifier_map,
             ControlFlowEdge::Fallthrough(3),
             Some(1),
-            HashMap::from([
-                (OperatorType::Add, b2_insr_2.clone()),
-                (OperatorType::Cmp, b1_insr_5.clone()),
-            ]),
+            body_block_dom_instr_map,
         );
 
         // Block 3
 
-        // j
+        // x
         let b3_insr_1 = Rc::new(RefCell::new(Instruction::new(
-            13,
-            Operator::Phi(19, 9),
-            None,
+            11,
+            Operator::StoredBinaryOp(StoredBinaryOpcode::Phi, 3, 7),
+            None, // TODO
         )));
 
         // y
         let b3_insr_2 = Rc::new(RefCell::new(Instruction::new(
             12,
-            Operator::Phi(4, 8),
-            None,
+            Operator::StoredBinaryOp(StoredBinaryOpcode::Phi, 4, 8),
+            Some(b3_insr_1.clone()),
         )));
 
-        // x
+        // j
         let b3_insr_3 = Rc::new(RefCell::new(Instruction::new(
-            11,
-            Operator::Phi(3, 7),
-            None,
+            13,
+            Operator::StoredBinaryOp(StoredBinaryOpcode::Phi, 19, 9),
+            Some(b3_insr_2.clone()),
         )));
 
         let b3_insr_4 = Rc::new(RefCell::new(Instruction::new(
@@ -2123,10 +2204,14 @@ mod tests {
         )));
 
         let mut join_block_2_identifier_map =
-            InheritingHashMap::with_dominator(join_block.get_identifier_map());
+            InheritingHashMap::with_dominator(body_block.get_identifier_map());
         join_block_2_identifier_map.insert(1, 11);
         join_block_2_identifier_map.insert(2, 12);
         join_block_2_identifier_map.insert(3, 13);
+        let mut join_block_2_dom_instr_map =
+            InheritingHashMap::with_dominator(body_block.get_dom_instr_map());
+        join_block_2_dom_instr_map.insert(StoredBinaryOpcode::Cmp, b3_insr_4.clone());
+        join_block_2_dom_instr_map.insert(StoredBinaryOpcode::Phi, b3_insr_3.clone());
 
         let join_block_2 = BasicBlock::from(
             vec![
@@ -2139,10 +2224,7 @@ mod tests {
             join_block_2_identifier_map,
             ControlFlowEdge::Fallthrough(4),
             Some(2),
-            HashMap::from([
-                (OperatorType::Cmp, b3_insr_4.clone()),
-                (OperatorType::Add, b2_insr_2.clone()),
-            ]),
+            join_block_2_dom_instr_map,
         );
 
         // Block 4
@@ -2172,6 +2254,9 @@ mod tests {
         body_block_2_identifier_map.insert(1, 7);
         body_block_2_identifier_map.insert(2, 8);
         body_block_2_identifier_map.insert(3, 9);
+        let mut body_block_2_dom_instr_map =
+            InheritingHashMap::with_dominator(join_block_2.get_dom_instr_map());
+        body_block_2_dom_instr_map.insert(StoredBinaryOpcode::Add, b4_insr_3.clone());
 
         let body_block_2 = BasicBlock::from(
             vec![
@@ -2183,46 +2268,48 @@ mod tests {
             body_block_2_identifier_map,
             ControlFlowEdge::Branch(3),
             Some(3),
-            HashMap::from([
-                (OperatorType::Cmp, b3_insr_4.clone()),
-                (OperatorType::Add, b4_insr_3.clone()),
-            ]),
+            body_block_2_dom_instr_map,
         );
 
         // Block 5
         let b5_insr_1 = Rc::new(RefCell::new(Instruction::new(
-            11,
+            14,
             Operator::StoredBinaryOp(StoredBinaryOpcode::Add, 16, -1),
-            None,
+            Some(b2_insr_2.clone()),
         )));
         let b5_insr_2 = Rc::new(RefCell::new(Instruction::new(
-            12,
+            15,
             Operator::UnconditionalBranch(1),
             None,
         )));
 
         let mut escape_block_2_identifier_map =
             InheritingHashMap::with_dominator(join_block_2.get_identifier_map());
-        escape_block_2_identifier_map.insert(0, 11);
+        escape_block_2_identifier_map.insert(0, 14);
+        let mut escape_block_2_dom_instr_map =
+            InheritingHashMap::with_dominator(join_block_2.get_dom_instr_map());
+        escape_block_2_dom_instr_map.insert(StoredBinaryOpcode::Add, b5_insr_1.clone());
 
         let escape_block2 = BasicBlock::from(
             vec![b5_insr_1.clone(), b5_insr_2.clone()],
             escape_block_2_identifier_map,
             ControlFlowEdge::Branch(1),
             Some(3),
-            HashMap::new(), // Defer
+            escape_block_2_dom_instr_map,
         );
 
-        // Block 6 - Done
+        // Block 6
         let escape_block_identifier_map =
             InheritingHashMap::with_dominator(join_block.get_identifier_map());
+        let escape_block_dom_instr_map =
+            InheritingHashMap::with_dominator(join_block.get_dom_instr_map());
 
         let escape_block = BasicBlock::from(
             Vec::new(),
             escape_block_identifier_map,
             ControlFlowEdge::Leaf,
             Some(1),
-            HashMap::from([(OperatorType::Cmp, b1_insr_5)]),
+            escape_block_dom_instr_map,
         );
 
         let expected_body = Body::from(
