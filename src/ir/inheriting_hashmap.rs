@@ -1,15 +1,66 @@
-use std::{collections::HashMap, fmt};
+use std::{cell::RefCell, collections::HashMap, rc::Rc};
 
-#[derive(Clone)]
+#[derive(Debug, PartialEq)]
 pub struct InheritingHashMap<K, V>
 where
     K: Eq + std::hash::Hash,
 {
-    dominator: Option<*const InheritingHashMap<K, V>>,
-    local: HashMap<K, V>,
+    inner: Rc<RefCell<_InheritingHashMap<K, V>>>,
 }
 
 impl<K, V> InheritingHashMap<K, V>
+where
+    K: Eq + std::hash::Hash + Clone,
+    V: Clone,
+{
+    fn new_inner(map: _InheritingHashMap<K, V>) -> Self {
+        Self {
+            inner: Rc::new(RefCell::new(map)),
+        }
+    }
+
+    pub fn new() -> Self {
+        Self::new_inner(_InheritingHashMap::new())
+    }
+
+    pub fn with_dominator(dom: &InheritingHashMap<K, V>) -> Self {
+        Self::new_inner(_InheritingHashMap::with_dominator(dom))
+    }
+
+    pub fn from_iter<T: IntoIterator<Item = (K, V)>>(iter: T) -> Self {
+        Self::new_inner(_InheritingHashMap::from_iter(iter))
+    }
+
+    pub fn insert(&mut self, key: K, value: V) {
+        self.inner.borrow_mut().insert(key, value);
+    }
+
+    pub fn get(&self, key: &K) -> Option<V> {
+        self.inner.borrow().get(key)
+    }
+}
+
+impl<K, V> Clone for InheritingHashMap<K, V>
+where
+    K: Eq + std::hash::Hash,
+{
+    fn clone(&self) -> Self {
+        Self {
+            inner: self.inner.clone(),
+        }
+    }
+}
+
+#[derive(Debug, PartialEq)]
+pub struct _InheritingHashMap<K, V>
+where
+    K: Eq + std::hash::Hash,
+{
+    dominator: Option<InheritingHashMap<K, V>>,
+    local: HashMap<K, V>,
+}
+
+impl<K, V> _InheritingHashMap<K, V>
 where
     K: Eq + std::hash::Hash + Clone,
     V: Clone,
@@ -21,11 +72,18 @@ where
         }
     }
 
-    pub fn with_dominator(dominator: &InheritingHashMap<K, V>) -> Self {
+    pub fn with_dominator(dom: &InheritingHashMap<K, V>) -> Self {
         Self {
-            dominator: Some(dominator),
+            dominator: Some(dom.clone()),
             local: HashMap::new(),
         }
+    }
+
+    pub fn from_iter<T: IntoIterator<Item = (K, V)>>(iter: T) -> Self {
+        iter.into_iter().fold(Self::new(), |mut map, (k, v)| {
+            map.insert(k, v);
+            map
+        })
     }
 
     pub fn insert(&mut self, key: K, value: V) {
@@ -33,89 +91,10 @@ where
     }
 
     pub fn get(&self, key: &K) -> Option<V> {
-        if let Some(value) = self.local.get(key) {
-            return Some(value.clone());
-        }
-
-        if let Some(dominator) = self.dominator {
-            unsafe {
-                // Safety: The user must ensure that the dominator lives longer than this map
-                return (*dominator).get(key);
-            }
-        }
-
-        None
-    }
-}
-
-impl<K, V> InheritingHashMap<K, V>
-where
-    K: Eq + std::hash::Hash + Clone,
-    V: Clone,
-{
-    pub fn from_iter<T: IntoIterator<Item = (K, V)>>(iter: T) -> Self {
-        let mut map = InheritingHashMap::new();
-
-        for (k, v) in iter {
-            map.insert(k, v);
-        }
-
-        map
-    }
-}
-
-impl<K, V> PartialEq for InheritingHashMap<K, V>
-where
-    K: Eq + std::hash::Hash + Clone,
-    V: PartialEq,
-{
-    fn eq(&self, other: &Self) -> bool {
-        // First check if local maps are equal
-        if self.local != other.local {
-            return false;
-        }
-
-        // Then check dominator equivalence
-        match (self.dominator, other.dominator) {
-            (Some(self_dom), Some(other_dom)) => {
-                unsafe {
-                    // Safety: The user must ensure that any dereference is valid and that
-                    // the lifetime constraints are respected.
-                    // This assumes that the structure pointed to by the dominators are valid.
-                    // It recursively checks for equality of pointed-to dominators.
-                    (*self_dom).local == (*other_dom).local
-                }
-            }
-            (None, None) => true,
-            _ => false,
-        }
-    }
-}
-
-impl<K, V> fmt::Debug for InheritingHashMap<K, V>
-where
-    K: Eq + std::hash::Hash + fmt::Debug + Clone,
-    V: fmt::Debug + Clone,
-{
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.debug_struct("InheritingHashMap")
-            .field("local", &self.local)
-            .field(
-                "dominator",
-                &self.dominator.map(|dom| unsafe {
-                    // Safety: This assumes that the dominator pointer is valid and that
-                    // the lifetime of the referenced value outlives this debug print.
-                    // To avoid dereferencing invalid memory, ensure dominators are valid.
-                    // Also, we are not printing deeply to avoid recursion issues.
-                    if !dom.is_null() {
-                        // We print the shallow contents to avoid deep recursion
-                        format!("{:?} ", (*dom).local)
-                    } else {
-                        "null".to_string()
-                    }
-                }),
-            )
-            .finish()
+        self.local
+            .get(key)
+            .cloned()
+            .or_else(|| self.dominator.as_ref().and_then(|dom| dom.get(key)))
     }
 }
 
@@ -135,6 +114,22 @@ mod tests {
 
         assert_eq!(map_2.get(&"hello".to_string()), Some("world".to_string()));
         assert_eq!(map_2.get(&"key".to_string()), Some("value".to_string()));
+    }
+
+    #[test]
+    fn simple_int_inheriting_hashmap() {
+        let mut map_1 = InheritingHashMap::new();
+        map_1.insert(1, 2);
+
+        assert_eq!(map_1.get(&1), Some(2));
+
+        let mut map_2 = InheritingHashMap::with_dominator(&map_1);
+        map_2.insert(3, 4);
+
+        assert_eq!(map_2.get(&3), Some(4));
+        assert_eq!(map_2.get(&1), Some(2));
+        assert_eq!(map_1.get(&3), None);
+        assert_eq!(map_1.get(&1), Some(2));
     }
 
     #[test]

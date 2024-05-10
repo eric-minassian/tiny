@@ -1763,129 +1763,129 @@ mod tests {
         assert_eq!(const_body, expected_const_body);
     }
 
-    // #[test]
-    // fn simple_while_loop() {
-    //     /*
-    //     let x <- 1;
-    //     while x < 3 do
-    //         let x <- x + 1;
-    //     od
-    //     */
-    //     let tokens = [
-    //         Token::Let,
-    //         Token::Identifier(1),
-    //         Token::Assignment,
-    //         Token::Number(1),
-    //         Token::Semicolon,
-    //         Token::While,
-    //         Token::Identifier(1),
-    //         Token::RelOp(RelOp::Lt),
-    //         Token::Number(3),
-    //         Token::Do,
-    //         Token::Let,
-    //         Token::Identifier(1),
-    //         Token::Assignment,
-    //         Token::Identifier(1),
-    //         Token::Add,
-    //         Token::Number(1),
-    //         Token::Semicolon,
-    //         Token::Od,
-    //     ];
+    #[test]
+    fn simple_while_loop() {
+        /*
+        let x <- 1;
+        while x < 3 do
+            let x <- x + 1;
+        od
+        */
+        let tokens = [
+            Token::Let,
+            Token::Identifier(1),
+            Token::Assignment,
+            Token::Number(1),
+            Token::Semicolon,
+            Token::While,
+            Token::Identifier(1),
+            Token::RelOp(RelOp::Lt),
+            Token::Number(3),
+            Token::Do,
+            Token::Let,
+            Token::Identifier(1),
+            Token::Assignment,
+            Token::Identifier(1),
+            Token::Add,
+            Token::Number(1),
+            Token::Semicolon,
+            Token::Od,
+        ];
 
-    //     let mut const_body = ConstBody::new();
+        let mut const_body = ConstBody::new();
 
-    //     let body = BodyParser::parse(
-    //         &mut tokens.map(|t| Ok(t)).into_iter().peekable(),
-    //         &mut const_body,
-    //     );
+        let body = BodyParser::parse(
+            &mut tokens.map(|t| Ok(t)).into_iter().peekable(),
+            &mut const_body,
+        );
 
-    //     // Block 0
-    //     let main_block_identifier_map = InheritingHashMap::from_iter([(1, -1)]);
+        // Block 0
+        let main_block_identifier_map = InheritingHashMap::from_iter([(1, -1)]);
 
-    //     let main_block = BasicBlock::from(
-    //         Vec::new(),
-    //         main_block_identifier_map,
-    //         ControlFlowEdge::Fallthrough(1),
-    //         None,
-    //         HashMap::new(),
-    //     );
+        let main_block = BasicBlock::from(
+            Vec::new(),
+            main_block_identifier_map,
+            ControlFlowEdge::Fallthrough(1),
+            None,
+            HashMap::new(),
+        );
 
-    //     // Block 1
-    //     let b1_insr_1 = Rc::new(RefCell::new(Instruction::new(
-    //         5,
-    //         Operator::Phi(-1, 3),
-    //         None,
-    //     )));
-    //     let b1_insr_2 = Rc::new(RefCell::new(Instruction::new(
-    //         1,
-    //         Operator::StoredBinaryOp(StoredBinaryOpcode::Cmp, 5, -3),
-    //         None,
-    //     )));
-    //     let b1_insr_3 = Rc::new(RefCell::new(Instruction::new(
-    //         2,
-    //         Operator::Branch(BranchOpcode::Ge, 3, 1),
-    //         None,
-    //     )));
+        // Block 1
+        let b1_insr_1 = Rc::new(RefCell::new(Instruction::new(
+            5,
+            Operator::Phi(-1, 3),
+            None,
+        )));
+        let b1_insr_2 = Rc::new(RefCell::new(Instruction::new(
+            1,
+            Operator::StoredBinaryOp(StoredBinaryOpcode::Cmp, 5, -3),
+            None,
+        )));
+        let b1_insr_3 = Rc::new(RefCell::new(Instruction::new(
+            2,
+            Operator::Branch(BranchOpcode::Ge, 3, 1),
+            None,
+        )));
 
-    //     let mut join_block_identifier_map =
-    //         InheritingHashMap::with_dominator(main_block.get_identifier_map());
-    //     join_block_identifier_map.insert(1, 5);
+        let mut join_block_identifier_map =
+            InheritingHashMap::with_dominator(main_block.get_identifier_map());
+        join_block_identifier_map.insert(1, 5);
 
-    //     let join_block = BasicBlock::from(
-    //         vec![b1_insr_1, b1_insr_2.clone(), b1_insr_3],
-    //         join_block_identifier_map,
-    //         ControlFlowEdge::Fallthrough(2),
-    //         Some(0),
-    //         HashMap::from([(OperatorType::Cmp, b1_insr_2.clone())]),
-    //     );
+        let join_block = BasicBlock::from(
+            vec![b1_insr_1, b1_insr_2.clone(), b1_insr_3],
+            join_block_identifier_map,
+            ControlFlowEdge::Fallthrough(2),
+            Some(0),
+            HashMap::from([(OperatorType::Cmp, b1_insr_2.clone())]),
+        );
 
-    //     // Block 2
-    //     let b2_insr_1 = Rc::new(RefCell::new(Instruction::new(
-    //         3,
-    //         Operator::StoredBinaryOp(StoredBinaryOpcode::Add, 5, -1),
-    //         None,
-    //     )));
-    //     let b2_insr_2 = Rc::new(RefCell::new(Instruction::new(
-    //         4,
-    //         Operator::UnconditionalBranch(1),
-    //         None,
-    //     )));
+        // Block 2
+        let b2_insr_1 = Rc::new(RefCell::new(Instruction::new(
+            3,
+            Operator::StoredBinaryOp(StoredBinaryOpcode::Add, 5, -1),
+            None,
+        )));
+        let b2_insr_2 = Rc::new(RefCell::new(Instruction::new(
+            4,
+            Operator::UnconditionalBranch(1),
+            None,
+        )));
 
-    //     let mut body_block_identifier_map =
-    //         InheritingHashMap::with_dominator(join_block.get_identifier_map());
-    //     body_block_identifier_map.insert(1, 3);
+        let mut body_block_identifier_map =
+            InheritingHashMap::with_dominator(join_block.get_identifier_map());
+        body_block_identifier_map.insert(1, 3);
 
-    //     let body_block = BasicBlock::from(
-    //         vec![b2_insr_1.clone(), b2_insr_2],
-    //         body_block_identifier_map,
-    //         ControlFlowEdge::Branch(1),
-    //         Some(1),
-    //         HashMap::from([
-    //             (OperatorType::Cmp, b1_insr_2.clone()),
-    //             (OperatorType::Add, b2_insr_1),
-    //         ]),
-    //     );
+        let body_block = BasicBlock::from(
+            vec![b2_insr_1.clone(), b2_insr_2],
+            body_block_identifier_map,
+            ControlFlowEdge::Branch(1),
+            Some(1),
+            HashMap::from([
+                (OperatorType::Cmp, b1_insr_2.clone()),
+                (OperatorType::Add, b2_insr_1),
+            ]),
+        );
 
-    //     // Block 3
-    //     let escape_block_identifier_map =
-    //         InheritingHashMap::with_dominator(join_block.get_identifier_map());
+        // Block 3
+        let escape_block_identifier_map =
+            InheritingHashMap::with_dominator(join_block.get_identifier_map());
 
-    //     let escape_block = BasicBlock::from(
-    //         Vec::new(),
-    //         escape_block_identifier_map,
-    //         ControlFlowEdge::Leaf,
-    //         Some(1),
-    //         HashMap::from([(OperatorType::Cmp, b1_insr_2)]),
-    //     );
+        let escape_block = BasicBlock::from(
+            Vec::new(),
+            escape_block_identifier_map,
+            ControlFlowEdge::Leaf,
+            Some(1),
+            HashMap::from([(OperatorType::Cmp, b1_insr_2)]),
+        );
 
-    //     let expected_body =
-    //         Body::from(0, vec![main_block, join_block, body_block, escape_block], 6);
+        let expected_body =
+            Body::from(0, vec![main_block, join_block, body_block, escape_block], 6);
 
-    //     let expected_const_body = ConstBody::from(HashSet::from([1, 3]));
+        let expected_const_body = ConstBody::from(HashSet::from([1, 3]));
 
-    //     assert_eq!(body, expected_body);
-    //     assert_eq!(const_body, expected_const_body);
-    // }
+        assert_eq!(body, expected_body);
+        assert_eq!(const_body, expected_const_body);
+    }
 
     // Temporarily testing without CSE
     // #[test]
