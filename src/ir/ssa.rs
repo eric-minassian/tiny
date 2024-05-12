@@ -36,27 +36,12 @@ impl Instruction {
         self.id
     }
 
-    pub fn update_identifier(&mut self, id: InstructionId, side: Side, epsilon: i32) {
-        if self.id == id {
-            return;
-        }
+    pub fn operator(&self) -> &Operator {
+        &self.operator
+    }
 
-        match &mut self.operator {
-            Operator::StoredBinaryOp(_, left, right) => match side {
-                Side::Left => {
-                    if *left < epsilon {
-                        *left = id;
-                    }
-                }
-                Side::Right => {
-                    if *right < epsilon {
-                        *right = id;
-                    }
-                }
-            },
-
-            _ => panic!("Cannot update identifier"),
-        }
+    pub fn update_operator(&mut self, operator: Operator) {
+        self.operator = operator;
     }
 
     pub fn update_dom(&mut self, dom: Rc<RefCell<Instruction>>) {
@@ -82,12 +67,6 @@ impl Instruction {
 
         None
     }
-}
-
-#[derive(Debug, PartialEq, Clone)]
-pub enum Side {
-    Left,
-    Right,
 }
 
 #[derive(Debug, PartialEq, Eq, Hash, Clone)]

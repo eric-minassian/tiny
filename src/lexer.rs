@@ -95,6 +95,7 @@ pub enum Token {
     OutputNewLine,
 }
 
+#[derive(Debug, Clone)]
 pub struct Tokenizer<'a> {
     chars: Peekable<Chars<'a>>,
     identifier_map: Vec<String>,
