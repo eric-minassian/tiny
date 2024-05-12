@@ -36,11 +36,23 @@ impl Instruction {
         self.id
     }
 
-    pub fn update_identifier(&mut self, id: InstructionId, side: Side) {
+    pub fn update_identifier(&mut self, id: InstructionId, side: Side, epsilon: i32) {
+        if self.id == id {
+            return;
+        }
+
         match &mut self.operator {
             Operator::StoredBinaryOp(_, left, right) => match side {
-                Side::Left => *left = id,
-                Side::Right => *right = id,
+                Side::Left => {
+                    if *left < epsilon {
+                        *left = id;
+                    }
+                }
+                Side::Right => {
+                    if *right < epsilon {
+                        *right = id;
+                    }
+                }
             },
 
             _ => panic!("Cannot update identifier"),
@@ -78,13 +90,14 @@ pub enum Side {
     Right,
 }
 
-#[derive(Debug, PartialEq, Clone)]
+#[derive(Debug, PartialEq, Eq, Hash, Clone)]
 pub enum StoredBinaryOpcode {
     Add,
     Sub,
     Mul,
     Div,
     Cmp,
+    Phi,
 }
 
 #[derive(Debug, PartialEq, Clone)]
@@ -117,38 +130,16 @@ pub enum Operator {
     UnconditionalBranch(BasicBlockId),
     StoredBinaryOp(StoredBinaryOpcode, InstructionId, InstructionId),
     End,
-    Phi(InstructionId, InstructionId),
     Read,
     Write(InstructionId),
     WriteNL,
-}
-
-#[derive(Debug, PartialEq, Eq, Hash, Clone)]
-pub enum OperatorType {
-    Add,
-    Sub,
-    Mul,
-    Div,
-    Cmp,
-}
-
-impl From<&StoredBinaryOpcode> for OperatorType {
-    fn from(op: &StoredBinaryOpcode) -> Self {
-        match op {
-            StoredBinaryOpcode::Add => Self::Add,
-            StoredBinaryOpcode::Sub => Self::Sub,
-            StoredBinaryOpcode::Mul => Self::Mul,
-            StoredBinaryOpcode::Div => Self::Div,
-            StoredBinaryOpcode::Cmp => Self::Cmp,
-        }
-    }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
 
-    use pretty_assertions::assert_eq;
+    use pretty_assertions_sorted::assert_eq;
 
     #[test]
     #[should_panic]

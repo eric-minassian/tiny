@@ -7,7 +7,7 @@ authors = ["Eric Minassian <eric@ericminassian.com>"]
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [lints.rust]
-unsafe_code = "forbid"
+# unsafe_code = "forbid"
 
 [lints.clippy]
 enum_glob_use = "deny"
@@ -17,4 +17,4 @@ unwrap_used = "deny"
 uninlined_format_args = { level = "allow", priority = 1 }
 
 [dev-dependencies]
-pretty_assertions = "1.4.0"
+pretty_assertions_sorted = "1.2.3"

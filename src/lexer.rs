@@ -267,7 +267,7 @@ impl Iterator for Tokenizer<'_> {
 mod tests {
     use super::*;
 
-    use pretty_assertions::assert_eq;
+    use pretty_assertions_sorted::assert_eq;
 
     #[test]
     fn test_reserved_words() {
