@@ -1,10 +1,10 @@
-use std::{cell::RefCell, collections::HashMap, rc::Rc};
+use std::{cell::RefCell, rc::Rc};
 
 use crate::lexer::IdentifierId;
 
 use super::{
     inheriting_hashmap::InheritingHashMap,
-    ssa::{Instruction, StoredBinaryOpcode},
+    ssa::{Instruction, Operator, StoredBinaryOpcode},
     InstructionId,
 };
 
@@ -63,7 +63,7 @@ impl Body {
 
 #[derive(Debug, PartialEq)]
 pub struct BasicBlock {
-    instructions: Vec<Rc<RefCell<Instruction>>>,
+    pub instructions: Vec<Rc<RefCell<Instruction>>>,
     identifier_map: InheritingHashMap<IdentifierId, InstructionId>,
     edge: ControlFlowEdge,
     dominator: Option<BasicBlockId>,
@@ -97,34 +97,20 @@ impl BasicBlock {
         }
     }
 
-    // pub fn remove_dom_instr(
-    //     &mut self,
-    //     op_type: StoredBinaryOpcode,
-    // ) -> Option<Rc<RefCell<Instruction>>> {
-    //     self.dom_instr_map.remove(&op_type)
-    // }
-
     pub fn get_dom_instr(&self, op_type: &StoredBinaryOpcode) -> Option<Rc<RefCell<Instruction>>> {
         self.dom_instr_map.get(op_type)
     }
 
-    pub fn push_instr(&mut self, instr: Rc<RefCell<Instruction>>, op_type: StoredBinaryOpcode) {
+    pub fn push_instr(&mut self, instr: Rc<RefCell<Instruction>>) {
         self.instructions.push(instr.clone());
-        self.dom_instr_map.insert(op_type, instr);
-    }
 
-    pub fn push_instr_no_dom(&mut self, instr: Rc<RefCell<Instruction>>) {
-        self.instructions.push(instr);
+        let instruction_borrow = instr.borrow();
+        let operator = instruction_borrow.operator();
+        if let Operator::StoredBinaryOp(stored_binary_opcode, _, _) = operator {
+            self.dom_instr_map
+                .insert(stored_binary_opcode.clone(), instr.clone());
+        }
     }
-
-    pub fn pop_and_push_1(&mut self) {
-        let instr = self.instructions.remove(0);
-        self.instructions.insert(self.instructions.len() - 1, instr);
-    }
-
-    // pub fn push_phi_instr(&mut self, instr: Rc<RefCell<Instruction>>) {
-    //     self.instructions.insert(0, instr);
-    // }
 
     pub fn get_identifier(&mut self, identifier: &IdentifierId) -> Option<InstructionId> {
         self.identifier_map.get(identifier)

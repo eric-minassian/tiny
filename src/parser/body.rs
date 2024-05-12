@@ -1,43 +1,17 @@
-use std::{
-    cell::RefCell,
-    collections::{BTreeMap, HashMap},
-    iter::Peekable,
-    rc::Rc,
-};
+use std::{cell::RefCell, collections::HashSet, iter::Peekable, rc::Rc};
 
 use crate::{
     error::{Error, Result},
     ir::{
         block::{BasicBlock, BasicBlockId, Body, ControlFlowEdge},
         inheriting_hashmap::InheritingHashMap,
-        ssa::{BranchOpcode, Instruction, InstructionId, Operator, Side, StoredBinaryOpcode},
+        ssa::{BranchOpcode, Instruction, InstructionId, Operator, StoredBinaryOpcode},
         ConstBody,
     },
     lexer::{IdentifierId, RelOp, Token},
 };
 
 use super::match_token;
-
-#[derive(Debug)]
-pub struct PhiValues {
-    pub left_identifier_id: Option<i32>,
-    pub right_identifier_id: Option<i32>,
-}
-
-#[derive(Debug)]
-pub struct PhiBlock {
-    pub side: Side,
-    pub phi_map: BTreeMap<IdentifierId, PhiValues>, // Use BTreeMap to ensure deterministic order
-}
-
-impl PhiBlock {
-    pub fn new() -> Self {
-        Self {
-            side: Side::Left,
-            phi_map: BTreeMap::new(),
-        }
-    }
-}
 
 #[derive(Debug)]
 pub struct SimpleReturn {
@@ -54,34 +28,19 @@ impl SimpleReturn {
     }
 }
 
-#[derive(Debug)]
-pub struct IdentifierUse {
-    pub instruction: Rc<RefCell<Instruction>>,
-    pub side: Side,
-}
-
-impl IdentifierUse {
-    pub fn new(instruction: Rc<RefCell<Instruction>>, side: Side) -> Self {
-        Self { instruction, side }
-    }
-}
-
 pub struct BodyParser<'a, T>
 where
-    T: Iterator<Item = Result<Token>>,
+    T: Iterator<Item = Result<Token>> + Clone,
 {
     tokens: &'a mut Peekable<T>,
     const_body: &'a mut ConstBody,
     body: Body,
     cur_block: BasicBlockId,
-    join_blocks: Vec<PhiBlock>,
-    identifier_use_map: HashMap<IdentifierId, Vec<IdentifierUse>>,
-    in_loop: bool,
 }
 
 impl<'a, T> BodyParser<'a, T>
 where
-    T: Iterator<Item = Result<Token>>,
+    T: Iterator<Item = Result<Token>> + Clone,
 {
     pub fn parse(tokens: &'a mut Peekable<T>, const_body: &'a mut ConstBody) -> Body {
         let mut body_parser = Self::new(tokens, const_body);
@@ -98,9 +57,6 @@ where
             const_body,
             cur_block: body.get_root(),
             body,
-            join_blocks: Vec::new(),
-            identifier_use_map: HashMap::new(),
-            in_loop: false,
         }
     }
 
@@ -110,6 +66,44 @@ where
 
     fn match_token(&mut self, expected: Token) -> Result<()> {
         match_token(&mut self.tokens, expected)
+    }
+
+    fn phi_detect(&self) -> Vec<IdentifierId> {
+        let tokens = self.tokens.clone();
+        let mut identifier_ids = HashSet::new();
+        let mut i = 1;
+        let mut is_let = false;
+
+        for token in tokens {
+            match token {
+                Ok(Token::Let) => {
+                    is_let = true;
+                }
+                Ok(Token::Identifier(id)) => {
+                    if is_let {
+                        identifier_ids.insert(id);
+                    }
+
+                    is_let = false;
+                }
+                Ok(Token::While | Token::If) => {
+                    i += 1;
+                }
+                Ok(Token::Od | Token::Fi) => {
+                    i -= 1;
+                }
+                _ => (),
+            }
+
+            if i == 0 {
+                break;
+            }
+        }
+
+        let mut identifier_ids = identifier_ids.into_iter().collect::<Vec<_>>();
+        identifier_ids.sort();
+
+        identifier_ids
     }
 
     fn stat_sequence(&mut self) -> Result<()> {
@@ -187,15 +181,24 @@ where
 
         self.cur_block = join_block_id;
 
+        let phis = self.phi_detect();
+        for phi in phis.clone() {
+            let id_val = self
+                .get_block_mut(join_block_id)
+                .get_identifier(&phi)
+                .unwrap_or_else(|| self.const_body.insert_returning_id(0));
+
+            let phi_id = self.handle_binary_op(StoredBinaryOpcode::Phi, id_val, 0, false);
+
+            self.get_block_mut(join_block_id)
+                .insert_identifier(phi, phi_id);
+        }
+
         let (comparator_instruction_id, opposite_relop) = self.relation()?;
         let join_block_branch_id = self.body.get_instruction_count() as i32;
         self.body.increment_instruction_count();
 
         self.match_token(Token::Do)?;
-
-        let mut phi_block_temp = PhiBlock::new();
-        phi_block_temp.side = Side::Right;
-        self.join_blocks.push(phi_block_temp);
 
         let body_block_dom_instr_map = InheritingHashMap::with_dominator(
             self.get_block_mut(join_block_id).get_dom_instr_map(),
@@ -215,12 +218,7 @@ where
             .update_edge(ControlFlowEdge::Fallthrough(body_block_id));
         self.cur_block = body_block_id;
 
-        let prev_in_loop = self.in_loop;
-        self.in_loop = true;
-
         self.stat_sequence()?;
-
-        self.in_loop = prev_in_loop;
 
         self.match_token(Token::Od)?;
 
@@ -238,87 +236,36 @@ where
         )));
 
         self.get_block_mut(body_block_end_id)
-            .push_instr_no_dom(body_block_end_instr);
-
-        let phi_node = self.join_blocks.pop().unwrap();
-
-        let identifier_map_copy = self
-            .get_block_mut(join_block_id)
-            .get_identifier_map()
-            .clone();
+            .push_instr(body_block_end_instr);
 
         self.cur_block = join_block_id;
 
-        for (id, temp_phi) in phi_node.phi_map.into_iter() {
-            let default_value = identifier_map_copy.get(&id).unwrap_or(0);
+        let phi_len = phis.len();
+        for (i, phi) in phis.clone().into_iter().enumerate() {
+            let new_id_val = self
+                .get_block_mut(body_block_end_id)
+                .get_identifier(&phi)
+                .unwrap_or_else(|| self.const_body.insert_returning_id(0));
 
-            // Temporary: Integrate better into handling of 0 values
-            if default_value == 0
-                && (temp_phi.left_identifier_id.is_none() || temp_phi.right_identifier_id.is_none())
-            {
-                self.const_body.insert_returning_id(0);
-            }
+            let join_block_instructions_len = self.get_block_mut(join_block_id).instructions.len();
 
-            let left = SimpleReturn::new(
-                temp_phi.left_identifier_id.unwrap_or(default_value),
-                if temp_phi.left_identifier_id.is_none() {
-                    Some(id)
-                } else {
-                    None
-                },
-            );
-            let right =
-                SimpleReturn::new(temp_phi.right_identifier_id.unwrap_or(default_value), None);
+            let temp = self.get_block_mut(join_block_id).instructions
+                [join_block_instructions_len - phi_len - 1 + i]
+                .borrow()
+                .operator()
+                .clone();
 
-            let new_instr_id = self
-                .handle_binary_op(StoredBinaryOpcode::Phi, left, right)
-                .instruction_id;
-
-            self.get_block_mut(join_block_id)
-                .insert_identifier(id, new_instr_id);
-
-            if let Some(identifier_use) = self.identifier_use_map.get_mut(&id) {
-                for i in (0..identifier_use.len()).rev() {
-                    let identifier_use_temp = &identifier_use[i];
-                    let mut identifier_use_instr_mut = identifier_use_temp.instruction.borrow_mut();
-
-                    if identifier_use_instr_mut.id() < comparator_instruction_id.instruction_id {
-                        break;
-                    }
-
-                    identifier_use_instr_mut.update_identifier(
-                        new_instr_id,
-                        identifier_use_temp.side.clone(),
-                        comparator_instruction_id.instruction_id,
-                    );
-                }
-            }
-
-            for phi_node_temp in self.join_blocks.iter_mut() {
-                if let Some(temp_phi) = phi_node_temp.phi_map.get_mut(&id) {
-                    match phi_node_temp.side {
-                        Side::Left => {
-                            temp_phi.left_identifier_id = Some(new_instr_id);
-                        }
-                        Side::Right => {
-                            temp_phi.right_identifier_id = Some(new_instr_id);
-                        }
-                    }
-                } else {
-                    phi_node_temp.phi_map.insert(
-                        id,
-                        match phi_node_temp.side {
-                            Side::Left => PhiValues {
-                                left_identifier_id: Some(new_instr_id),
-                                right_identifier_id: None,
-                            },
-                            Side::Right => PhiValues {
-                                left_identifier_id: None,
-                                right_identifier_id: Some(new_instr_id),
-                            },
-                        },
-                    );
-                }
+            if let Operator::StoredBinaryOp(StoredBinaryOpcode::Phi, old_val, _) = temp {
+                self.get_block_mut(join_block_id).instructions
+                    [join_block_instructions_len - phi_len - 1 + i]
+                    .borrow_mut()
+                    .update_operator(Operator::StoredBinaryOp(
+                        StoredBinaryOpcode::Phi,
+                        old_val,
+                        new_id_val,
+                    ));
+            } else {
+                panic!("Expected Phi Operator: {:?}", temp);
             }
         }
 
@@ -338,17 +285,15 @@ where
         ));
 
         self.get_block_mut(join_block_id)
-            .push_instr_no_dom(Rc::new(RefCell::new(Instruction::new(
+            .push_instr(Rc::new(RefCell::new(Instruction::new(
                 join_block_branch_id,
                 Operator::Branch(
                     BranchOpcode::from(opposite_relop),
                     escape_block_id,
-                    comparator_instruction_id.instruction_id,
+                    comparator_instruction_id,
                 ),
                 None,
             ))));
-
-        self.get_block_mut(join_block_id).pop_and_push_1();
 
         self.cur_block = escape_block_id;
 
@@ -358,6 +303,8 @@ where
     fn if_statement(&mut self) -> Result<()> {
         self.match_token(Token::If)?;
 
+        let phis = self.phi_detect();
+
         let (comparator_instruction_id, opposite_relop) = self.relation()?;
 
         self.match_token(Token::Then)?;
@@ -365,8 +312,6 @@ where
         let branch_block_id = self.cur_block;
         let branch_instruction_id = self.body.get_instruction_count() as i32;
         self.body.increment_instruction_count();
-
-        self.join_blocks.push(PhiBlock::new());
 
         let then_block_identifier_map = InheritingHashMap::with_dominator(
             self.get_block_mut(branch_block_id).get_identifier_map(),
@@ -398,8 +343,6 @@ where
 
         if is_else_present {
             self.tokens.next();
-
-            self.join_blocks.last_mut().unwrap().side = Side::Right;
 
             let else_block_identifier_map = InheritingHashMap::with_dominator(
                 self.get_block_mut(branch_block_id).get_identifier_map(),
@@ -451,7 +394,7 @@ where
         let else_block_end_id = self.cur_block;
 
         self.get_block_mut(branch_block_id)
-            .push_instr_no_dom(Rc::new(RefCell::new(Instruction::new(
+            .push_instr(Rc::new(RefCell::new(Instruction::new(
                 branch_instruction_id,
                 Operator::Branch(
                     BranchOpcode::from(opposite_relop),
@@ -460,84 +403,34 @@ where
                     } else {
                         join_block_id
                     },
-                    comparator_instruction_id.instruction_id,
+                    comparator_instruction_id,
                 ),
                 None,
             ))));
 
         self.cur_block = join_block_id;
 
-        let phi_node = self.join_blocks.pop().unwrap();
+        for phi in phis {
+            let left_id_val = self
+                .get_block_mut(then_block_end_id)
+                .get_identifier(&phi)
+                .unwrap_or_else(|| self.const_body.insert_returning_id(0));
 
-        let identifier_map_copy = self
-            .get_block_mut(join_block_id)
-            .get_identifier_map()
-            .clone();
+            let right_id_val = if is_else_present {
+                self.get_block_mut(else_block_end_id)
+                    .get_identifier(&phi)
+                    .unwrap_or_else(|| self.const_body.insert_returning_id(0))
+            } else {
+                self.get_block_mut(branch_block_id)
+                    .get_identifier(&phi)
+                    .unwrap_or_else(|| self.const_body.insert_returning_id(0))
+            };
 
-        for (id, temp_phi) in phi_node.phi_map.into_iter() {
-            // let new_instr_id = self.body.get_instruction_count() as i32;
-            // self.body.increment_instruction_count();
-
-            let default_value = identifier_map_copy.get(&id).unwrap_or(0);
-
-            // Temporary: Integrate better into handling of 0 values
-            if default_value == 0
-                && (temp_phi.left_identifier_id.is_none() || temp_phi.right_identifier_id.is_none())
-            {
-                self.const_body.insert_returning_id(0);
-            }
-
-            // let operator = Operator::StoredBinaryOp(
-            //     StoredBinaryOpcode::Phi,
-            //     temp_phi.left_identifier_id.unwrap_or(default_value),
-            //     temp_phi.right_identifier_id.unwrap_or(default_value),
-            // );
-
-            // let new_instr = Rc::new(RefCell::new(Instruction::new(new_instr_id, operator, None)));
-
-            // let block = self.get_block_mut(join_block_id);
-
-            // block.push_instr_no_dom(new_instr);
-            // block.insert_identifier(id, new_instr_id);
-
-            let left =
-                SimpleReturn::new(temp_phi.left_identifier_id.unwrap_or(default_value), None);
-            let right =
-                SimpleReturn::new(temp_phi.right_identifier_id.unwrap_or(default_value), None);
-
-            let new_instr_id = self
-                .handle_binary_op(StoredBinaryOpcode::Phi, left, right)
-                .instruction_id;
+            let phi_id =
+                self.handle_binary_op(StoredBinaryOpcode::Phi, left_id_val, right_id_val, false);
 
             self.get_block_mut(join_block_id)
-                .insert_identifier(id, new_instr_id);
-
-            for phi_node_temp in self.join_blocks.iter_mut() {
-                if let Some(temp_phi) = phi_node_temp.phi_map.get_mut(&id) {
-                    match phi_node_temp.side {
-                        Side::Left => {
-                            temp_phi.left_identifier_id = Some(new_instr_id);
-                        }
-                        Side::Right => {
-                            temp_phi.right_identifier_id = Some(new_instr_id);
-                        }
-                    }
-                } else {
-                    phi_node_temp.phi_map.insert(
-                        id,
-                        match phi_node_temp.side {
-                            Side::Left => PhiValues {
-                                left_identifier_id: Some(new_instr_id),
-                                right_identifier_id: None,
-                            },
-                            Side::Right => PhiValues {
-                                left_identifier_id: None,
-                                right_identifier_id: Some(new_instr_id),
-                            },
-                        },
-                    );
-                }
-            }
+                .insert_identifier(phi, phi_id);
         }
 
         Ok(())
@@ -585,30 +478,10 @@ where
             Token::Identifier(identifier_id) => {
                 self.match_token(Token::Assignment)?;
 
-                let instruction_id = self.expression()?.instruction_id;
+                let instruction_id = self.expression()?;
 
                 self.get_block_mut(self.cur_block)
                     .insert_identifier(identifier_id, instruction_id);
-
-                if let Some(phi_node) = self.join_blocks.last_mut() {
-                    let temp_phi =
-                        phi_node
-                            .phi_map
-                            .entry(identifier_id)
-                            .or_insert_with(|| PhiValues {
-                                left_identifier_id: None,
-                                right_identifier_id: None,
-                            });
-
-                    match phi_node.side {
-                        Side::Left => {
-                            temp_phi.left_identifier_id = Some(instruction_id);
-                        }
-                        Side::Right => {
-                            temp_phi.right_identifier_id = Some(instruction_id);
-                        }
-                    }
-                }
 
                 Ok(())
             }
@@ -616,7 +489,7 @@ where
         }
     }
 
-    fn relation(&mut self) -> Result<(SimpleReturn, RelOp)> {
+    fn relation(&mut self) -> Result<(InstructionId, RelOp)> {
         let left = self.expression()?;
 
         match self
@@ -627,7 +500,7 @@ where
             Token::RelOp(relop) => {
                 let right = self.expression()?;
                 Ok((
-                    self.handle_binary_op(StoredBinaryOpcode::Cmp, left, right),
+                    self.handle_binary_op(StoredBinaryOpcode::Cmp, left, right, true),
                     relop.opposite(),
                 ))
             }
@@ -638,23 +511,24 @@ where
     fn handle_binary_op(
         &mut self,
         operator: StoredBinaryOpcode,
-        left: SimpleReturn,
-        right: SimpleReturn,
-    ) -> SimpleReturn {
+        left: InstructionId,
+        right: InstructionId,
+        cse: bool,
+    ) -> InstructionId {
         let new_instr_id = self.body.get_instruction_count() as i32;
 
         let mut new_instr = Instruction::new(
             new_instr_id,
-            Operator::StoredBinaryOp(operator.clone(), left.instruction_id, right.instruction_id),
+            Operator::StoredBinaryOp(operator.clone(), left, right),
             None,
         );
 
-        if !self.in_loop {
+        if cse {
             if let Some(dom_instr) = self.get_block_mut(self.cur_block).get_dom_instr(&operator) {
                 if let Some(dup_instr_id) =
                     dom_instr.try_borrow().unwrap().check_dominators(&new_instr)
                 {
-                    return SimpleReturn::new(dup_instr_id, None);
+                    return dup_instr_id;
                 }
             }
         }
@@ -666,27 +540,14 @@ where
         let new_instr = Rc::new(RefCell::new(new_instr));
 
         self.get_block_mut(self.cur_block)
-            .push_instr(new_instr.clone(), operator);
-
-        if let Some(identifier_id) = left.identifier_id {
-            self.identifier_use_map
-                .entry(identifier_id)
-                .or_insert_with(Vec::new)
-                .push(IdentifierUse::new(new_instr.clone(), Side::Left));
-        }
-        if let Some(identifier_id) = right.identifier_id {
-            self.identifier_use_map
-                .entry(identifier_id)
-                .or_insert_with(Vec::new)
-                .push(IdentifierUse::new(new_instr.clone(), Side::Right));
-        }
+            .push_instr(new_instr.clone());
 
         self.body.increment_instruction_count();
 
-        SimpleReturn::new(new_instr_id, None)
+        new_instr_id
     }
 
-    fn expression(&mut self) -> Result<SimpleReturn> {
+    fn expression(&mut self) -> Result<InstructionId> {
         let mut left = self.term()?;
 
         while let Some(token) = self.tokens.peek() {
@@ -694,12 +555,12 @@ where
                 Ok(Token::Add) => {
                     self.tokens.next();
                     let right = self.term()?;
-                    left = self.handle_binary_op(StoredBinaryOpcode::Add, left, right);
+                    left = self.handle_binary_op(StoredBinaryOpcode::Add, left, right, true);
                 }
                 Ok(Token::Sub) => {
                     self.tokens.next();
                     let right = self.term()?;
-                    left = self.handle_binary_op(StoredBinaryOpcode::Sub, left, right);
+                    left = self.handle_binary_op(StoredBinaryOpcode::Sub, left, right, true);
                 }
 
                 _ => break,
@@ -709,7 +570,7 @@ where
         Ok(left)
     }
 
-    fn term(&mut self) -> Result<SimpleReturn> {
+    fn term(&mut self) -> Result<InstructionId> {
         let mut left = self.factor()?;
 
         while let Some(token) = self.tokens.peek() {
@@ -717,12 +578,12 @@ where
                 Ok(Token::Mul) => {
                     self.tokens.next();
                     let right = self.factor()?;
-                    left = self.handle_binary_op(StoredBinaryOpcode::Mul, left, right);
+                    left = self.handle_binary_op(StoredBinaryOpcode::Mul, left, right, true);
                 }
                 Ok(Token::Div) => {
                     self.tokens.next();
                     let right = self.factor()?;
-                    left = self.handle_binary_op(StoredBinaryOpcode::Div, left, right);
+                    left = self.handle_binary_op(StoredBinaryOpcode::Div, left, right, true);
                 }
                 _ => break,
             }
@@ -731,15 +592,13 @@ where
         Ok(left)
     }
 
-    fn factor(&mut self) -> Result<SimpleReturn> {
+    fn factor(&mut self) -> Result<InstructionId> {
         match self
             .tokens
             .peek()
             .ok_or_else(|| Error::UnexpectedEndOfFile)?
         {
             Ok(Token::Identifier(id)) => {
-                let identifier_id = *id;
-
                 let instruction_id = self
                     .body
                     .get_mut_block(self.cur_block)
@@ -749,15 +608,13 @@ where
                     .clone();
                 self.tokens.next();
 
-                // Ok(instruction_id)
-                Ok(SimpleReturn::new(instruction_id, Some(identifier_id)))
+                Ok(instruction_id)
             }
             Ok(Token::Number(num)) => {
                 let instruction_id = self.const_body.insert_returning_id(*num);
                 self.tokens.next();
 
-                // Ok(instruction_id)
-                Ok(SimpleReturn::new(instruction_id, None))
+                Ok(instruction_id)
             }
             Ok(Token::LPar) => {
                 self.tokens.next();
@@ -785,11 +642,7 @@ mod tests {
     use super::*;
 
     use pretty_assertions_sorted::{assert_eq, assert_eq_sorted};
-    use std::{
-        cell::RefCell,
-        collections::{HashMap, HashSet},
-        rc::Rc,
-    };
+    use std::{cell::RefCell, collections::HashSet, rc::Rc};
 
     use crate::lexer::RelOp;
 
@@ -1830,137 +1683,136 @@ mod tests {
         assert_eq!(const_body, expected_const_body);
     }
 
-    // #[test]
-    // fn simple_while_loop() {
-    //     /*
-    //     let x <- 1;
-    //     while x < 3 do
-    //         let x <- x + 1;
-    //     od
-    //     */
-    //     let tokens = [
-    //         Token::Let,
-    //         Token::Identifier(1),
-    //         Token::Assignment,
-    //         Token::Number(1),
-    //         Token::Semicolon,
-    //         Token::While,
-    //         Token::Identifier(1),
-    //         Token::RelOp(RelOp::Lt),
-    //         Token::Number(3),
-    //         Token::Do,
-    //         Token::Let,
-    //         Token::Identifier(1),
-    //         Token::Assignment,
-    //         Token::Identifier(1),
-    //         Token::Add,
-    //         Token::Number(1),
-    //         Token::Semicolon,
-    //         Token::Od,
-    //     ];
+    #[test]
+    fn simple_while_loop() {
+        /*
+        let x <- 1;
+        while x < 3 do
+            let x <- x + 1;
+        od
+        */
+        let tokens = [
+            Token::Let,
+            Token::Identifier(1),
+            Token::Assignment,
+            Token::Number(1),
+            Token::Semicolon,
+            Token::While,
+            Token::Identifier(1),
+            Token::RelOp(RelOp::Lt),
+            Token::Number(3),
+            Token::Do,
+            Token::Let,
+            Token::Identifier(1),
+            Token::Assignment,
+            Token::Identifier(1),
+            Token::Add,
+            Token::Number(1),
+            Token::Semicolon,
+            Token::Od,
+        ];
 
-    //     let mut const_body = ConstBody::new();
+        let mut const_body = ConstBody::new();
 
-    //     let body = BodyParser::parse(
-    //         &mut tokens.map(|t| Ok(t)).into_iter().peekable(),
-    //         &mut const_body,
-    //     );
+        let body = BodyParser::parse(
+            &mut tokens.map(|t| Ok(t)).into_iter().peekable(),
+            &mut const_body,
+        );
 
-    //     // Block 0
-    //     let main_block_identifier_map = InheritingHashMap::from_iter([(1, -1)]);
+        // Block 0
+        let main_block_identifier_map = InheritingHashMap::from_iter([(1, -1)]);
 
-    //     let main_block = BasicBlock::from(
-    //         Vec::new(),
-    //         main_block_identifier_map,
-    //         ControlFlowEdge::Fallthrough(1),
-    //         None,
-    //         InheritingHashMap::new(),
-    //     );
+        let main_block = BasicBlock::from(
+            Vec::new(),
+            main_block_identifier_map,
+            ControlFlowEdge::Fallthrough(1),
+            None,
+            InheritingHashMap::new(),
+        );
 
-    //     // Block 1
-    //     let b1_insr_1 = Rc::new(RefCell::new(Instruction::new(
-    //         5,
-    //         Operator::StoredBinaryOp(StoredBinaryOpcode::Phi, -1, 3),
-    //         None,
-    //     )));
-    //     let b1_insr_2 = Rc::new(RefCell::new(Instruction::new(
-    //         1,
-    //         Operator::StoredBinaryOp(StoredBinaryOpcode::Cmp, 5, -3),
-    //         None,
-    //     )));
-    //     let b1_insr_3 = Rc::new(RefCell::new(Instruction::new(
-    //         2,
-    //         Operator::Branch(BranchOpcode::Ge, 3, 1),
-    //         None,
-    //     )));
+        // Block 1
+        let b1_insr_1 = Rc::new(RefCell::new(Instruction::new(
+            1,
+            Operator::StoredBinaryOp(StoredBinaryOpcode::Phi, -1, 4),
+            None,
+        )));
+        let b1_insr_2 = Rc::new(RefCell::new(Instruction::new(
+            2,
+            Operator::StoredBinaryOp(StoredBinaryOpcode::Cmp, 1, -3),
+            None,
+        )));
+        let b1_insr_3 = Rc::new(RefCell::new(Instruction::new(
+            3,
+            Operator::Branch(BranchOpcode::Ge, 3, 2),
+            None,
+        )));
 
-    //     let mut join_block_identifier_map =
-    //         InheritingHashMap::with_dominator(main_block.get_identifier_map());
-    //     join_block_identifier_map.insert(1, 5);
-    //     let mut join_block_dom_instr_map =
-    //         InheritingHashMap::with_dominator(main_block.get_dom_instr_map());
-    //     join_block_dom_instr_map.insert(StoredBinaryOpcode::Cmp, b1_insr_2.clone());
-    //     join_block_dom_instr_map.insert(StoredBinaryOpcode::Phi, b1_insr_1.clone());
+        let mut join_block_identifier_map =
+            InheritingHashMap::with_dominator(main_block.get_identifier_map());
+        join_block_identifier_map.insert(1, 1);
+        let mut join_block_dom_instr_map =
+            InheritingHashMap::with_dominator(main_block.get_dom_instr_map());
+        join_block_dom_instr_map.insert(StoredBinaryOpcode::Cmp, b1_insr_2.clone());
+        join_block_dom_instr_map.insert(StoredBinaryOpcode::Phi, b1_insr_1.clone());
 
-    //     let join_block = BasicBlock::from(
-    //         vec![b1_insr_1.clone(), b1_insr_2.clone(), b1_insr_3],
-    //         join_block_identifier_map,
-    //         ControlFlowEdge::Fallthrough(2),
-    //         Some(0),
-    //         join_block_dom_instr_map,
-    //     );
+        let join_block = BasicBlock::from(
+            vec![b1_insr_1.clone(), b1_insr_2.clone(), b1_insr_3],
+            join_block_identifier_map,
+            ControlFlowEdge::Fallthrough(2),
+            Some(0),
+            join_block_dom_instr_map,
+        );
 
-    //     // Block 2
-    //     let b2_insr_1 = Rc::new(RefCell::new(Instruction::new(
-    //         3,
-    //         Operator::StoredBinaryOp(StoredBinaryOpcode::Add, 5, -1),
-    //         None,
-    //     )));
-    //     let b2_insr_2 = Rc::new(RefCell::new(Instruction::new(
-    //         4,
-    //         Operator::UnconditionalBranch(1),
-    //         None,
-    //     )));
+        // Block 2
+        let b2_insr_1 = Rc::new(RefCell::new(Instruction::new(
+            4,
+            Operator::StoredBinaryOp(StoredBinaryOpcode::Add, 1, -1),
+            None,
+        )));
+        let b2_insr_2 = Rc::new(RefCell::new(Instruction::new(
+            5,
+            Operator::UnconditionalBranch(1),
+            None,
+        )));
 
-    //     let mut body_block_identifier_map =
-    //         InheritingHashMap::with_dominator(join_block.get_identifier_map());
-    //     body_block_identifier_map.insert(1, 3);
-    //     let mut body_block_dom_instr_map =
-    //         InheritingHashMap::with_dominator(join_block.get_dom_instr_map());
-    //     body_block_dom_instr_map.insert(StoredBinaryOpcode::Add, b2_insr_1.clone());
+        let mut body_block_identifier_map =
+            InheritingHashMap::with_dominator(join_block.get_identifier_map());
+        body_block_identifier_map.insert(1, 4);
+        let mut body_block_dom_instr_map =
+            InheritingHashMap::with_dominator(join_block.get_dom_instr_map());
+        body_block_dom_instr_map.insert(StoredBinaryOpcode::Add, b2_insr_1.clone());
 
-    //     let body_block = BasicBlock::from(
-    //         vec![b2_insr_1.clone(), b2_insr_2],
-    //         body_block_identifier_map,
-    //         ControlFlowEdge::Branch(1),
-    //         Some(1),
-    //         body_block_dom_instr_map,
-    //     );
+        let body_block = BasicBlock::from(
+            vec![b2_insr_1.clone(), b2_insr_2],
+            body_block_identifier_map,
+            ControlFlowEdge::Branch(1),
+            Some(1),
+            body_block_dom_instr_map,
+        );
 
-    //     // Block 3
-    //     let escape_block_identifier_map =
-    //         InheritingHashMap::with_dominator(join_block.get_identifier_map());
-    //     let escape_block_dom_instr_map =
-    //         InheritingHashMap::with_dominator(join_block.get_dom_instr_map());
+        // Block 3
+        let escape_block_identifier_map =
+            InheritingHashMap::with_dominator(join_block.get_identifier_map());
+        let escape_block_dom_instr_map =
+            InheritingHashMap::with_dominator(join_block.get_dom_instr_map());
 
-    //     let escape_block = BasicBlock::from(
-    //         Vec::new(),
-    //         escape_block_identifier_map,
-    //         ControlFlowEdge::Leaf,
-    //         Some(1),
-    //         escape_block_dom_instr_map,
-    //     );
+        let escape_block = BasicBlock::from(
+            Vec::new(),
+            escape_block_identifier_map,
+            ControlFlowEdge::Leaf,
+            Some(1),
+            escape_block_dom_instr_map,
+        );
 
-    //     let expected_body =
-    //         Body::from(0, vec![main_block, join_block, body_block, escape_block], 6);
+        let expected_body =
+            Body::from(0, vec![main_block, join_block, body_block, escape_block], 6);
 
-    //     let expected_const_body = ConstBody::from(HashSet::from([1, 3]));
+        let expected_const_body = ConstBody::from(HashSet::from([1, 3]));
 
-    //     assert_eq!(body, expected_body);
-    //     assert_eq!(const_body, expected_const_body);
-    // }
+        assert_eq!(body, expected_body);
+        assert_eq!(const_body, expected_const_body);
+    }
 
-    // Temporarily testing without CSE
     #[test]
     fn nested_while_loop() {
         /*
@@ -2078,49 +1930,49 @@ mod tests {
 
         // i
         let b1_insr_1 = Rc::new(RefCell::new(Instruction::new(
-            16,
-            Operator::StoredBinaryOp(StoredBinaryOpcode::Phi, 0, 14),
+            1,
+            Operator::StoredBinaryOp(StoredBinaryOpcode::Phi, 0, 7),
             None,
         )));
 
         // x
         let b1_insr_2 = Rc::new(RefCell::new(Instruction::new(
-            17,
-            Operator::StoredBinaryOp(StoredBinaryOpcode::Phi, 0, 11),
+            2,
+            Operator::StoredBinaryOp(StoredBinaryOpcode::Phi, 0, 9),
             Some(b1_insr_1.clone()),
         )));
 
         // y
         let b1_insr_3 = Rc::new(RefCell::new(Instruction::new(
-            18,
-            Operator::StoredBinaryOp(StoredBinaryOpcode::Phi, 0, 12),
+            3,
+            Operator::StoredBinaryOp(StoredBinaryOpcode::Phi, 0, 10),
             Some(b1_insr_2.clone()),
         )));
 
         // j
         let b1_insr_4 = Rc::new(RefCell::new(Instruction::new(
-            19,
-            Operator::StoredBinaryOp(StoredBinaryOpcode::Phi, 0, 13),
+            4,
+            Operator::StoredBinaryOp(StoredBinaryOpcode::Phi, 0, 11),
             Some(b1_insr_3.clone()),
         )));
 
         let b1_insr_5 = Rc::new(RefCell::new(Instruction::new(
-            1,
-            Operator::StoredBinaryOp(StoredBinaryOpcode::Cmp, 17, -10),
+            5,
+            Operator::StoredBinaryOp(StoredBinaryOpcode::Cmp, 2, -10),
             None,
         )));
         let b1_insr_6 = Rc::new(RefCell::new(Instruction::new(
-            2,
-            Operator::Branch(BranchOpcode::Ge, 6, 1),
+            6,
+            Operator::Branch(BranchOpcode::Ge, 6, 5),
             None,
         )));
 
         let mut join_block_identifier_map =
             InheritingHashMap::with_dominator(main_block.get_identifier_map());
-        join_block_identifier_map.insert(0, 16);
-        join_block_identifier_map.insert(1, 17);
-        join_block_identifier_map.insert(2, 18);
-        join_block_identifier_map.insert(3, 19);
+        join_block_identifier_map.insert(0, 1);
+        join_block_identifier_map.insert(1, 2);
+        join_block_identifier_map.insert(2, 3);
+        join_block_identifier_map.insert(3, 4);
         let mut join_block_dom_instr_map =
             InheritingHashMap::with_dominator(main_block.get_dom_instr_map());
         join_block_dom_instr_map.insert(StoredBinaryOpcode::Cmp, b1_insr_5.clone());
@@ -2143,20 +1995,20 @@ mod tests {
 
         // Block 2
         let b2_insr_1 = Rc::new(RefCell::new(Instruction::new(
-            3,
-            Operator::StoredBinaryOp(StoredBinaryOpcode::Add, 16, -1),
+            7,
+            Operator::StoredBinaryOp(StoredBinaryOpcode::Add, 1, -1),
             None,
         )));
         let b2_insr_2 = Rc::new(RefCell::new(Instruction::new(
-            4,
-            Operator::StoredBinaryOp(StoredBinaryOpcode::Add, 19, -1),
+            8,
+            Operator::StoredBinaryOp(StoredBinaryOpcode::Add, 4, -1),
             Some(b2_insr_1.clone()),
         )));
 
         let mut body_block_identifier_map =
             InheritingHashMap::with_dominator(join_block.get_identifier_map());
-        body_block_identifier_map.insert(1, 3);
-        body_block_identifier_map.insert(2, 4);
+        body_block_identifier_map.insert(1, 7);
+        body_block_identifier_map.insert(2, 8);
         let mut body_block_dom_instr_map =
             InheritingHashMap::with_dominator(join_block.get_dom_instr_map());
         body_block_dom_instr_map.insert(StoredBinaryOpcode::Add, b2_insr_2.clone());
@@ -2173,41 +2025,41 @@ mod tests {
 
         // x
         let b3_insr_1 = Rc::new(RefCell::new(Instruction::new(
-            11,
-            Operator::StoredBinaryOp(StoredBinaryOpcode::Phi, 3, 7),
-            None, // TODO
+            9,
+            Operator::StoredBinaryOp(StoredBinaryOpcode::Phi, 7, 14),
+            Some(b1_insr_4.clone()),
         )));
 
         // y
         let b3_insr_2 = Rc::new(RefCell::new(Instruction::new(
-            12,
-            Operator::StoredBinaryOp(StoredBinaryOpcode::Phi, 4, 8),
+            10,
+            Operator::StoredBinaryOp(StoredBinaryOpcode::Phi, 8, 7),
             Some(b3_insr_1.clone()),
         )));
 
         // j
         let b3_insr_3 = Rc::new(RefCell::new(Instruction::new(
-            13,
-            Operator::StoredBinaryOp(StoredBinaryOpcode::Phi, 19, 9),
+            11,
+            Operator::StoredBinaryOp(StoredBinaryOpcode::Phi, 4, 14),
             Some(b3_insr_2.clone()),
         )));
 
         let b3_insr_4 = Rc::new(RefCell::new(Instruction::new(
-            5,
-            Operator::StoredBinaryOp(StoredBinaryOpcode::Cmp, 13, -10),
+            12,
+            Operator::StoredBinaryOp(StoredBinaryOpcode::Cmp, 11, -10),
             Some(b1_insr_5.clone()),
         )));
         let b3_insr_5 = Rc::new(RefCell::new(Instruction::new(
-            6,
-            Operator::Branch(BranchOpcode::Ge, 5, 5),
+            13,
+            Operator::Branch(BranchOpcode::Ge, 5, 12),
             None,
         )));
 
         let mut join_block_2_identifier_map =
             InheritingHashMap::with_dominator(body_block.get_identifier_map());
-        join_block_2_identifier_map.insert(1, 11);
-        join_block_2_identifier_map.insert(2, 12);
-        join_block_2_identifier_map.insert(3, 13);
+        join_block_2_identifier_map.insert(1, 9);
+        join_block_2_identifier_map.insert(2, 10);
+        join_block_2_identifier_map.insert(3, 11);
         let mut join_block_2_dom_instr_map =
             InheritingHashMap::with_dominator(body_block.get_dom_instr_map());
         join_block_2_dom_instr_map.insert(StoredBinaryOpcode::Cmp, b3_insr_4.clone());
@@ -2229,42 +2081,27 @@ mod tests {
 
         // Block 4
         let b4_insr_1 = Rc::new(RefCell::new(Instruction::new(
-            7,
-            Operator::StoredBinaryOp(StoredBinaryOpcode::Add, 13, -1),
+            14,
+            Operator::StoredBinaryOp(StoredBinaryOpcode::Add, 11, -1),
             Some(b2_insr_2.clone()),
         )));
-        let b4_insr_2 = Rc::new(RefCell::new(Instruction::new(
-            8,
-            Operator::StoredBinaryOp(StoredBinaryOpcode::Add, 16, -1),
-            Some(b4_insr_1.clone()),
-        )));
-        let b4_insr_3 = Rc::new(RefCell::new(Instruction::new(
-            9,
-            Operator::StoredBinaryOp(StoredBinaryOpcode::Add, 13, -1),
-            Some(b4_insr_2.clone()),
-        )));
         let b4_insr_4 = Rc::new(RefCell::new(Instruction::new(
-            10,
+            15,
             Operator::UnconditionalBranch(3),
             None,
         )));
 
         let mut body_block_2_identifier_map =
             InheritingHashMap::with_dominator(join_block_2.get_identifier_map());
-        body_block_2_identifier_map.insert(1, 7);
-        body_block_2_identifier_map.insert(2, 8);
-        body_block_2_identifier_map.insert(3, 9);
+        body_block_2_identifier_map.insert(1, 14);
+        body_block_2_identifier_map.insert(2, 7);
+        body_block_2_identifier_map.insert(3, 14);
         let mut body_block_2_dom_instr_map =
             InheritingHashMap::with_dominator(join_block_2.get_dom_instr_map());
-        body_block_2_dom_instr_map.insert(StoredBinaryOpcode::Add, b4_insr_3.clone());
+        body_block_2_dom_instr_map.insert(StoredBinaryOpcode::Add, b4_insr_1.clone());
 
         let body_block_2 = BasicBlock::from(
-            vec![
-                b4_insr_1.clone(),
-                b4_insr_2.clone(),
-                b4_insr_3.clone(),
-                b4_insr_4.clone(),
-            ],
+            vec![b4_insr_1.clone(), b4_insr_4.clone()],
             body_block_2_identifier_map,
             ControlFlowEdge::Branch(3),
             Some(3),
@@ -2273,25 +2110,19 @@ mod tests {
 
         // Block 5
         let b5_insr_1 = Rc::new(RefCell::new(Instruction::new(
-            14,
-            Operator::StoredBinaryOp(StoredBinaryOpcode::Add, 16, -1),
-            Some(b2_insr_2.clone()),
-        )));
-        let b5_insr_2 = Rc::new(RefCell::new(Instruction::new(
-            15,
+            16,
             Operator::UnconditionalBranch(1),
             None,
         )));
 
         let mut escape_block_2_identifier_map =
             InheritingHashMap::with_dominator(join_block_2.get_identifier_map());
-        escape_block_2_identifier_map.insert(0, 14);
-        let mut escape_block_2_dom_instr_map =
+        escape_block_2_identifier_map.insert(0, 7);
+        let escape_block_2_dom_instr_map =
             InheritingHashMap::with_dominator(join_block_2.get_dom_instr_map());
-        escape_block_2_dom_instr_map.insert(StoredBinaryOpcode::Add, b5_insr_1.clone());
 
         let escape_block2 = BasicBlock::from(
-            vec![b5_insr_1.clone(), b5_insr_2.clone()],
+            vec![b5_insr_1.clone()],
             escape_block_2_identifier_map,
             ControlFlowEdge::Branch(1),
             Some(3),
@@ -2323,7 +2154,7 @@ mod tests {
                 escape_block2,
                 escape_block,
             ],
-            20,
+            17,
         );
 
         let expected_const_body = ConstBody::from(HashSet::from([0, 1, 10]));
