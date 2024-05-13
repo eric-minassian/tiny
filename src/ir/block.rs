@@ -14,7 +14,6 @@ pub type BasicBlockId = usize;
 pub struct Body {
     root: BasicBlockId,
     blocks: Vec<BasicBlock>,
-    next_instr_id: u32,
 }
 
 impl Body {
@@ -22,28 +21,15 @@ impl Body {
         Self {
             root: 0,
             blocks: vec![BasicBlock::new()],
-            next_instr_id: 1,
         }
     }
 
-    pub fn from(root: BasicBlockId, blocks: Vec<BasicBlock>, instruction_count: u32) -> Self {
-        Self {
-            root,
-            blocks,
-            next_instr_id: instruction_count,
-        }
+    pub fn from(root: BasicBlockId, blocks: Vec<BasicBlock>) -> Self {
+        Self { root, blocks }
     }
 
     pub fn get_root(&self) -> BasicBlockId {
         self.root
-    }
-
-    pub fn get_instruction_count(&self) -> u32 {
-        self.next_instr_id
-    }
-
-    pub fn increment_instruction_count(&mut self) {
-        self.next_instr_id += 1;
     }
 
     pub fn insert_block(&mut self, block: BasicBlock) -> BasicBlockId {
