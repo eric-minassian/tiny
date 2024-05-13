@@ -47,7 +47,7 @@ where
         }
     }
 
-    pub fn get_block_mut(&mut self, id: BasicBlockId) -> &mut BasicBlock {
+    fn get_block_mut(&mut self, id: BasicBlockId) -> &mut BasicBlock {
         self.body.get_mut_block(id).unwrap()
     }
 
@@ -2189,11 +2189,11 @@ mod tests {
         );
 
         // Block 0
-        let main_block_identifier_map = InheritingHashMap::from_iter([(1, -1)]);
-        let main_block_dom_instr_map = InheritingHashMap::new();
-
         let b0_insr_1 = Rc::new(RefCell::new(Instruction::new(1, Operator::Ret(-1), None)));
         let b0_insr_2 = Rc::new(RefCell::new(Instruction::new(2, Operator::End, None)));
+
+        let main_block_identifier_map = InheritingHashMap::from_iter([(1, -1)]);
+        let main_block_dom_instr_map = InheritingHashMap::new();
 
         let main_block = BasicBlock::from(
             vec![b0_insr_1, b0_insr_2],
@@ -2226,10 +2226,10 @@ mod tests {
         );
 
         // Block 0
+        let b0_insr_1 = Rc::new(RefCell::new(Instruction::new(1, Operator::End, None)));
+
         let main_block_identifier_map = InheritingHashMap::new();
         let main_block_dom_instr_map = InheritingHashMap::new();
-
-        let b0_insr_1 = Rc::new(RefCell::new(Instruction::new(1, Operator::End, None)));
 
         let main_block = BasicBlock::from(
             vec![b0_insr_1],
