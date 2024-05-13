@@ -113,6 +113,9 @@ pub enum Operator {
     Read,
     Write(InstructionId),
     WriteNL,
+    GetPar { idx: u8, val: InstructionId },
+    SetPar { idx: u8, val: InstructionId },
+    Jsr(InstructionId),
 }
 
 #[cfg(test)]

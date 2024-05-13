@@ -8,7 +8,7 @@ use crate::{
         ssa::{BranchOpcode, Instruction, InstructionId, Operator, StoredBinaryOpcode},
         ConstBody,
     },
-    lexer::{IdentifierId, RelOp, Token},
+    lexer::{IdentifierId, PredefinedFunction, RelOp, Token},
 };
 
 use super::match_token;
@@ -126,7 +126,10 @@ where
 
         match token {
             Ok(Token::Let) => self.assignment(),
-            Ok(Token::Call) => self.func_call(),
+            Ok(Token::Call) => {
+                let _ = self.func_call()?;
+                Ok(())
+            }
             Ok(Token::If) => self.if_statement(),
             Ok(Token::While) => self.while_statement(),
             Ok(Token::Return) => self.return_statement(),
@@ -441,35 +444,102 @@ where
         Ok(())
     }
 
-    fn func_call(&mut self) -> Result<()> {
-        // self.match_token(Token::Call, "Expected 'call' keyword")?;
+    fn func_call(&mut self) -> Result<InstructionId> {
+        self.match_token(Token::Call)?;
 
-        // match self
-        //     .tokens
-        //     .next()
-        //     .ok_or_else(|| Error::SyntaxError("Expected Another Token".to_string()))??
-        // {
-        //     Token::Identifier(id) => {
-        //         // @TODO: Functions without parameters can be called with or without parentheses
-        //         self.match_token(Token::LPar, "Expected '(' symbol")?;
+        let next_token = self
+            .tokens
+            .next()
+            .ok_or_else(|| Error::UnexpectedEndOfFile)??;
 
-        //         let _ = self.expression()?;
+        match next_token {
+            Token::Identifier(identifier) => {
+                if let Ok(Token::LPar) = self
+                    .tokens
+                    .peek()
+                    .ok_or_else(|| Error::UnexpectedEndOfFile)?
+                {
+                    self.match_token(Token::LPar)?;
 
-        //         while let Some(token) = self.tokens.peek() {
-        //             match token {
-        //                 Ok(Token::Comma) => {
-        //                     let _ = self.expression()?;
-        //                 }
-        //                 _ => break,
-        //             }
-        //         }
+                    if let Ok(expr) = self.expression() {
+                        let mut args = vec![expr];
 
-        //         todo!()
-        //     }
-        //     _ => Err(Error::SyntaxError("Expected an identifier".to_string())),
-        // }
+                        while let Some(Ok(Token::Comma)) = self.tokens.peek() {
+                            self.tokens.next();
+                            args.push(self.expression()?);
+                        }
 
-        todo!()
+                        args.into_iter().enumerate().for_each(|(idx, val)| {
+                            let arg_instr = Rc::new(RefCell::new(Instruction::new(
+                                self.next_instr_id,
+                                Operator::SetPar {
+                                    idx: idx as u8,
+                                    val,
+                                },
+                                None,
+                            )));
+                            self.next_instr_id += 1;
+                            self.get_block_mut(self.cur_block).push_instr(arg_instr);
+                        });
+                    }
+
+                    self.match_token(Token::RPar)?;
+                }
+
+                let call_instr_id = self.next_instr_id;
+                let call_instr = Rc::new(RefCell::new(Instruction::new(
+                    call_instr_id,
+                    Operator::Jsr(identifier as i32),
+                    None,
+                )));
+                self.next_instr_id += 1;
+
+                self.get_block_mut(self.cur_block).push_instr(call_instr);
+
+                Ok(call_instr_id)
+            }
+            Token::PredefinedFunction(func) => {
+                let mut args = vec![];
+                if let Ok(Token::LPar) = self
+                    .tokens
+                    .peek()
+                    .ok_or_else(|| Error::UnexpectedEndOfFile)?
+                {
+                    self.match_token(Token::LPar)?;
+
+                    if let Ok(expr) = self.expression() {
+                        args.push(expr);
+
+                        while let Some(Ok(Token::Comma)) = self.tokens.peek() {
+                            self.tokens.next();
+                            args.push(self.expression()?);
+                        }
+                    }
+
+                    self.match_token(Token::RPar)?;
+                }
+
+                let operator = match func {
+                    PredefinedFunction::InputNum => Operator::Read,
+                    PredefinedFunction::OutputNum => Operator::Write(args[0]),
+                    PredefinedFunction::OutputNewLine => Operator::WriteNL,
+                };
+
+                let call_instr_id = self.next_instr_id;
+                let call_instr = Rc::new(RefCell::new(Instruction::new(
+                    call_instr_id,
+                    operator,
+                    None,
+                )));
+                self.next_instr_id += 1;
+
+                self.get_block_mut(self.cur_block).push_instr(call_instr);
+
+                Ok(call_instr_id)
+            }
+
+            _ => Err(Error::SyntaxError("Expected an identifier".to_string())),
+        }
     }
 
     fn assignment(&mut self) -> Result<()> {
@@ -633,10 +703,8 @@ where
                     _ => Err(Error::SyntaxError("Expected ')'.".to_string())),
                 }
             }
-            Ok(_) => {
-                // let _ = self.func_call();
-                todo!()
-            }
+            Ok(Token::Call) => self.func_call(),
+            Ok(token) => Err(Error::SyntaxError(format!("Unexpected token: {:?}", token))),
             Err(e) => Err(e.clone()),
         }
     }
@@ -649,7 +717,7 @@ mod tests {
     use pretty_assertions_sorted::assert_eq_sorted;
     use std::{cell::RefCell, collections::HashSet, rc::Rc};
 
-    use crate::lexer::RelOp;
+    use crate::lexer::{PredefinedFunction, RelOp, Tokenizer};
 
     #[test]
     fn simple_assignment() {
@@ -2242,6 +2310,198 @@ mod tests {
         let expected_body = Body::from(0, vec![main_block]);
 
         let expected_const_body = ConstBody::new();
+
+        assert_eq_sorted!(body, expected_body);
+        assert_eq_sorted!(const_body, expected_const_body);
+    }
+
+    #[test]
+    fn simple_predefined_function_call() {
+        /*
+        let x <- call InputNum();
+        call OutputNum(x);
+        call OutputNewLine;
+        let y <- call InputNum;
+        call OutputNewLine()
+        */
+
+        let tokens = [
+            Token::Let,
+            Token::Identifier(1),
+            Token::Assignment,
+            Token::Call,
+            Token::PredefinedFunction(PredefinedFunction::InputNum),
+            Token::LPar,
+            Token::RPar,
+            Token::Semicolon,
+            Token::Call,
+            Token::PredefinedFunction(PredefinedFunction::OutputNum),
+            Token::LPar,
+            Token::Identifier(1),
+            Token::RPar,
+            Token::Semicolon,
+            Token::Call,
+            Token::PredefinedFunction(PredefinedFunction::OutputNewLine),
+            Token::Semicolon,
+            Token::Let,
+            Token::Identifier(2),
+            Token::Assignment,
+            Token::Call,
+            Token::PredefinedFunction(PredefinedFunction::InputNum),
+            Token::Semicolon,
+            Token::Call,
+            Token::PredefinedFunction(PredefinedFunction::OutputNewLine),
+            Token::LPar,
+            Token::RPar,
+        ];
+
+        let mut const_body = ConstBody::new();
+
+        let body = BodyParser::parse(
+            &mut tokens.map(|t| Ok(t)).into_iter().peekable(),
+            &mut const_body,
+        );
+
+        // Block 0
+        let b0_insr_1 = Rc::new(RefCell::new(Instruction::new(1, Operator::Read, None)));
+        let b0_insr_2 = Rc::new(RefCell::new(Instruction::new(2, Operator::Write(1), None)));
+        let b0_insr_3 = Rc::new(RefCell::new(Instruction::new(3, Operator::WriteNL, None)));
+        let b0_insr_4 = Rc::new(RefCell::new(Instruction::new(4, Operator::Read, None)));
+        let b0_insr_5 = Rc::new(RefCell::new(Instruction::new(5, Operator::WriteNL, None)));
+
+        let main_block_identifier_map = InheritingHashMap::from_iter([(1, 1), (2, 4)]);
+        let main_block_dom_instr_map = InheritingHashMap::new();
+
+        let main_block = BasicBlock::from(
+            vec![b0_insr_1, b0_insr_2, b0_insr_3, b0_insr_4, b0_insr_5],
+            main_block_identifier_map,
+            ControlFlowEdge::Leaf,
+            None,
+            main_block_dom_instr_map,
+        );
+
+        let expected_body = Body::from(0, vec![main_block]);
+        let expected_const_body = ConstBody::from(HashSet::new());
+
+        assert_eq_sorted!(body, expected_body);
+        assert_eq_sorted!(const_body, expected_const_body);
+    }
+
+    #[test]
+    fn simple_user_defined_functions() {
+        /*
+        let a <- 1;
+        let b <- call user1(a);
+        let c <- call user2;
+        call user3();
+        let d <- call user4();
+        call user5
+        let e <- call user6(a, b, c)
+        */
+
+        let tokens = [
+            Token::Let,
+            Token::Identifier(1),
+            Token::Assignment,
+            Token::Number(1),
+            Token::Semicolon,
+            Token::Let,
+            Token::Identifier(2),
+            Token::Assignment,
+            Token::Call,
+            Token::Identifier(10),
+            Token::LPar,
+            Token::Identifier(1),
+            Token::RPar,
+            Token::Semicolon,
+            Token::Let,
+            Token::Identifier(3),
+            Token::Assignment,
+            Token::Call,
+            Token::Identifier(11),
+            Token::Semicolon,
+            Token::Call,
+            Token::Identifier(12),
+            Token::LPar,
+            Token::RPar,
+            Token::Semicolon,
+            Token::Let,
+            Token::Identifier(4),
+            Token::Assignment,
+            Token::Call,
+            Token::Identifier(13),
+            Token::LPar,
+            Token::RPar,
+            Token::Semicolon,
+            Token::Call,
+            Token::Identifier(14),
+            Token::Semicolon,
+            Token::Let,
+            Token::Identifier(5),
+            Token::Assignment,
+            Token::Call,
+            Token::Identifier(15),
+            Token::LPar,
+            Token::Identifier(1),
+            Token::Comma,
+            Token::Identifier(2),
+            Token::Comma,
+            Token::Identifier(3),
+            Token::RPar,
+        ];
+
+        let mut const_body = ConstBody::new();
+
+        let body = BodyParser::parse(
+            &mut tokens.map(|t| Ok(t)).into_iter().peekable(),
+            &mut const_body,
+        );
+
+        // Block 0
+        let b0_insr_1 = Rc::new(RefCell::new(Instruction::new(
+            1,
+            Operator::SetPar { idx: 0, val: -1 },
+            None,
+        )));
+        let b0_insr_2 = Rc::new(RefCell::new(Instruction::new(2, Operator::Jsr(10), None)));
+        let b0_insr_3 = Rc::new(RefCell::new(Instruction::new(3, Operator::Jsr(11), None)));
+        let b0_insr_4 = Rc::new(RefCell::new(Instruction::new(4, Operator::Jsr(12), None)));
+        let b0_insr_5 = Rc::new(RefCell::new(Instruction::new(5, Operator::Jsr(13), None)));
+        let b0_insr_6 = Rc::new(RefCell::new(Instruction::new(6, Operator::Jsr(14), None)));
+        let b0_insr_7 = Rc::new(RefCell::new(Instruction::new(
+            7,
+            Operator::SetPar { idx: 0, val: -1 },
+            None,
+        )));
+        let b0_insr_8 = Rc::new(RefCell::new(Instruction::new(
+            8,
+            Operator::SetPar { idx: 1, val: 2 },
+            None,
+        )));
+        let b0_insr_9 = Rc::new(RefCell::new(Instruction::new(
+            9,
+            Operator::SetPar { idx: 2, val: 3 },
+            None,
+        )));
+        let b0_insr_10 = Rc::new(RefCell::new(Instruction::new(10, Operator::Jsr(15), None)));
+
+        let main_block_identifier_map =
+            InheritingHashMap::from_iter([(1, -1), (2, 2), (3, 3), (4, 5), (5, 10)]);
+        let main_block_dom_instr_map = InheritingHashMap::new();
+
+        let main_block = BasicBlock::from(
+            vec![
+                b0_insr_1, b0_insr_2, b0_insr_3, b0_insr_4, b0_insr_5, b0_insr_6, b0_insr_7,
+                b0_insr_8, b0_insr_9, b0_insr_10,
+            ],
+            main_block_identifier_map,
+            ControlFlowEdge::Leaf,
+            None,
+            main_block_dom_instr_map,
+        );
+
+        let expected_body = Body::from(0, vec![main_block]);
+        let expected_const_body = ConstBody::from(HashSet::from([1]));
 
         assert_eq_sorted!(body, expected_body);
         assert_eq_sorted!(const_body, expected_const_body);

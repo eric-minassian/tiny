@@ -25,9 +25,18 @@ const RESERVED_WORDS: [(&str, Token); RESERVED_WORDS_COUNT] = [
 ];
 
 const BUILTIN_FUNCTIONS: [(&str, Token); 3] = [
-    ("InputNum", Token::InputNum),
-    ("OutputNum", Token::OutputNum),
-    ("OutputNewLine", Token::OutputNewLine),
+    (
+        "InputNum",
+        Token::PredefinedFunction(PredefinedFunction::InputNum),
+    ),
+    (
+        "OutputNum",
+        Token::PredefinedFunction(PredefinedFunction::OutputNum),
+    ),
+    (
+        "OutputNewLine",
+        Token::PredefinedFunction(PredefinedFunction::OutputNewLine),
+    ),
 ];
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -53,6 +62,13 @@ impl RelOp {
     }
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum PredefinedFunction {
+    InputNum,
+    OutputNum,
+    OutputNewLine,
+}
+
 pub type Number = u32;
 pub type Identifier = usize;
 
@@ -61,6 +77,7 @@ pub enum Token {
     Number(Number),
     Identifier(Identifier),
     RelOp(RelOp),
+    PredefinedFunction(PredefinedFunction),
 
     Mul,        // *
     Div,        // /
@@ -89,10 +106,6 @@ pub enum Token {
     Void,
     Function,
     Main,
-
-    InputNum,
-    OutputNum,
-    OutputNewLine,
 }
 
 #[derive(Debug, Clone)]
@@ -336,14 +349,14 @@ mod tests {
         let input = "InputNum() OutputNum(x) OutputNewLine()";
         let mut tokenizer = Tokenizer::new(input);
         let expected_tokens = [
-            Token::InputNum,
+            Token::PredefinedFunction(PredefinedFunction::InputNum),
             Token::LPar,
             Token::RPar,
-            Token::OutputNum,
+            Token::PredefinedFunction(PredefinedFunction::OutputNum),
             Token::LPar,
             Token::Identifier(14), // Assuming the reserved words occupy the first 14 slots
             Token::RPar,
-            Token::OutputNewLine,
+            Token::PredefinedFunction(PredefinedFunction::OutputNewLine),
             Token::LPar,
             Token::RPar,
         ];
@@ -471,14 +484,14 @@ mod tests {
         let input = "InputNum() OutputNum(x) OutputNewLine() OutputNotValid()";
         let mut tokenizer = Tokenizer::new(input);
         let expected_tokens = [
-            Ok(Token::InputNum),
+            Ok(Token::PredefinedFunction(PredefinedFunction::InputNum)),
             Ok(Token::LPar),
             Ok(Token::RPar),
-            Ok(Token::OutputNum),
+            Ok(Token::PredefinedFunction(PredefinedFunction::OutputNum)),
             Ok(Token::LPar),
             Ok(Token::Identifier(14)), // Assuming the reserved words occupy the first 14 slots
             Ok(Token::RPar),
-            Ok(Token::OutputNewLine),
+            Ok(Token::PredefinedFunction(PredefinedFunction::OutputNewLine)),
             Ok(Token::LPar),
             Ok(Token::RPar),
             Err(Error::SyntaxError(
