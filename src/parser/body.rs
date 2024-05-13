@@ -13,21 +13,6 @@ use crate::{
 
 use super::match_token;
 
-#[derive(Debug)]
-pub struct SimpleReturn {
-    pub instruction_id: InstructionId,
-    pub identifier_id: Option<IdentifierId>,
-}
-
-impl SimpleReturn {
-    pub fn new(instruction_id: InstructionId, identifier_id: Option<IdentifierId>) -> Self {
-        Self {
-            instruction_id,
-            identifier_id,
-        }
-    }
-}
-
 pub struct BodyParser<'a, T>
 where
     T: Iterator<Item = Result<Token>> + Clone,
@@ -36,6 +21,7 @@ where
     const_body: &'a mut ConstBody,
     body: Body,
     cur_block: BasicBlockId,
+    next_instr_id: InstructionId,
 }
 
 impl<'a, T> BodyParser<'a, T>
@@ -57,6 +43,7 @@ where
             const_body,
             cur_block: body.get_root(),
             body,
+            next_instr_id: 1,
         }
     }
 
@@ -148,14 +135,32 @@ where
     }
 
     fn return_statement(&mut self) -> Result<()> {
-        // self.match_token(Token::Return, "Expected 'return' keyword")?;
+        self.match_token(Token::Return)?;
 
-        // match self.expression() {
-        //     Ok(_) => todo!(),
-        //     Err(_) => todo!(),
-        // }
+        if let Ok(result_id) = self.expression() {
+            let return_instruction_id = self.next_instr_id;
+            self.next_instr_id += 1;
 
-        todo!()
+            let return_instruction = Rc::new(RefCell::new(Instruction::new(
+                return_instruction_id,
+                Operator::Ret(result_id),
+                None,
+            )));
+            self.get_block_mut(self.cur_block)
+                .push_instr(return_instruction);
+        }
+
+        let end_instr_id = self.next_instr_id;
+        self.next_instr_id += 1;
+
+        let end_instr = Rc::new(RefCell::new(Instruction::new(
+            end_instr_id,
+            Operator::End,
+            None,
+        )));
+        self.get_block_mut(self.cur_block).push_instr(end_instr);
+
+        Ok(())
     }
 
     fn while_statement(&mut self) -> Result<()> {
@@ -195,8 +200,8 @@ where
         }
 
         let (comparator_instruction_id, opposite_relop) = self.relation()?;
-        let join_block_branch_id = self.body.get_instruction_count() as i32;
-        self.body.increment_instruction_count();
+        let join_block_branch_id = self.next_instr_id;
+        self.next_instr_id += 1;
 
         self.match_token(Token::Do)?;
 
@@ -227,8 +232,8 @@ where
         self.get_block_mut(body_block_end_id)
             .update_edge(ControlFlowEdge::Branch(join_block_id));
 
-        let body_block_branch_id = self.body.get_instruction_count() as i32;
-        self.body.increment_instruction_count();
+        let body_block_branch_id = self.next_instr_id;
+        self.next_instr_id += 1;
         let body_block_end_instr = Rc::new(RefCell::new(Instruction::new(
             body_block_branch_id,
             Operator::UnconditionalBranch(join_block_id),
@@ -310,8 +315,8 @@ where
         self.match_token(Token::Then)?;
 
         let branch_block_id = self.cur_block;
-        let branch_instruction_id = self.body.get_instruction_count() as i32;
-        self.body.increment_instruction_count();
+        let branch_instruction_id = self.next_instr_id;
+        self.next_instr_id += 1;
 
         let then_block_identifier_map = InheritingHashMap::with_dominator(
             self.get_block_mut(branch_block_id).get_identifier_map(),
@@ -515,7 +520,7 @@ where
         right: InstructionId,
         cse: bool,
     ) -> InstructionId {
-        let new_instr_id = self.body.get_instruction_count() as i32;
+        let new_instr_id = self.next_instr_id;
 
         let mut new_instr = Instruction::new(
             new_instr_id,
@@ -542,7 +547,7 @@ where
         self.get_block_mut(self.cur_block)
             .push_instr(new_instr.clone());
 
-        self.body.increment_instruction_count();
+        self.next_instr_id += 1;
 
         new_instr_id
     }
@@ -641,7 +646,7 @@ where
 mod tests {
     use super::*;
 
-    use pretty_assertions_sorted::{assert_eq, assert_eq_sorted};
+    use pretty_assertions_sorted::assert_eq_sorted;
     use std::{cell::RefCell, collections::HashSet, rc::Rc};
 
     use crate::lexer::RelOp;
@@ -773,7 +778,7 @@ mod tests {
             None,
             main_block_dom_instr_map,
         );
-        let expected_body = Body::from(0, vec![main_block], 10);
+        let expected_body = Body::from(0, vec![main_block]);
 
         let expected_const_body = ConstBody::from(HashSet::from([0, 1, 2, 3, 4]));
 
@@ -827,7 +832,7 @@ mod tests {
             None,
             main_block_dom_instr_map,
         );
-        let expected_body = Body::from(0, vec![main_block], 2);
+        let expected_body = Body::from(0, vec![main_block]);
 
         let expected_const_body = ConstBody::from(HashSet::from([1, 3]));
 
@@ -908,7 +913,7 @@ mod tests {
             None,
             main_block_dom_instr_map,
         );
-        let expected_body = Body::from(0, vec![main_block], 4);
+        let expected_body = Body::from(0, vec![main_block]);
 
         let expected_const_body = ConstBody::from(HashSet::from([1, 3]));
 
@@ -1035,7 +1040,7 @@ mod tests {
             join_block_dom_instr_map,
         );
 
-        let expected_body = Body::from(0, vec![main_block, then_block, else_block, join_block], 4);
+        let expected_body = Body::from(0, vec![main_block, then_block, else_block, join_block]);
 
         let expected_const_body = ConstBody::from(HashSet::from([1, 2, 4]));
 
@@ -1197,7 +1202,7 @@ mod tests {
             join_block_dom_instr_map,
         );
 
-        let expected_body = Body::from(0, vec![main_block, then_block, else_block, join_block], 7);
+        let expected_body = Body::from(0, vec![main_block, then_block, else_block, join_block]);
 
         let expected_const_body = ConstBody::from(HashSet::from([0, 1, 2, 4]));
 
@@ -1336,12 +1341,12 @@ mod tests {
             join_block_dom_instr_map,
         );
 
-        let expected_body = Body::from(0, vec![main_block, then_block, else_block, join_block], 5);
+        let expected_body = Body::from(0, vec![main_block, then_block, else_block, join_block]);
 
         let expected_const_body = ConstBody::from(HashSet::from([0, 1, 2, 4, 13]));
 
-        assert_eq!(body, expected_body);
-        assert_eq!(const_body, expected_const_body);
+        assert_eq_sorted!(body, expected_body);
+        assert_eq_sorted!(const_body, expected_const_body);
     }
 
     #[test]
@@ -1439,12 +1444,12 @@ mod tests {
             join_block_dom_instr_map,
         );
 
-        let expected_body = Body::from(0, vec![main_block, then_block, join_block], 4);
+        let expected_body = Body::from(0, vec![main_block, then_block, join_block]);
 
         let expected_const_body = ConstBody::from(HashSet::from([1, 2]));
 
-        assert_eq!(body, expected_body);
-        assert_eq!(const_body, expected_const_body);
+        assert_eq_sorted!(body, expected_body);
+        assert_eq_sorted!(const_body, expected_const_body);
     }
 
     #[test]
@@ -1674,13 +1679,12 @@ mod tests {
                 else_block,
                 join_block,
             ],
-            9,
         );
 
         let expected_const_body = ConstBody::from(HashSet::from([0, 1, 3, 4, 5, 12]));
 
-        assert_eq!(body, expected_body);
-        assert_eq!(const_body, expected_const_body);
+        assert_eq_sorted!(body, expected_body);
+        assert_eq_sorted!(const_body, expected_const_body);
     }
 
     #[test]
@@ -1804,13 +1808,12 @@ mod tests {
             escape_block_dom_instr_map,
         );
 
-        let expected_body =
-            Body::from(0, vec![main_block, join_block, body_block, escape_block], 6);
+        let expected_body = Body::from(0, vec![main_block, join_block, body_block, escape_block]);
 
         let expected_const_body = ConstBody::from(HashSet::from([1, 3]));
 
-        assert_eq!(body, expected_body);
-        assert_eq!(const_body, expected_const_body);
+        assert_eq_sorted!(body, expected_body);
+        assert_eq_sorted!(const_body, expected_const_body);
     }
 
     #[test]
@@ -2154,10 +2157,91 @@ mod tests {
                 escape_block2,
                 escape_block,
             ],
-            17,
         );
 
         let expected_const_body = ConstBody::from(HashSet::from([0, 1, 10]));
+
+        assert_eq_sorted!(body, expected_body);
+        assert_eq_sorted!(const_body, expected_const_body);
+    }
+
+    #[test]
+    fn simple_return() {
+        /*
+        let x <- 1;
+        return x
+        */
+        let tokens = [
+            Token::Let,
+            Token::Identifier(1),
+            Token::Assignment,
+            Token::Number(1),
+            Token::Semicolon,
+            Token::Return,
+            Token::Identifier(1),
+        ];
+
+        let mut const_body = ConstBody::new();
+
+        let body = BodyParser::parse(
+            &mut tokens.map(|t| Ok(t)).into_iter().peekable(),
+            &mut const_body,
+        );
+
+        // Block 0
+        let main_block_identifier_map = InheritingHashMap::from_iter([(1, -1)]);
+        let main_block_dom_instr_map = InheritingHashMap::new();
+
+        let b0_insr_1 = Rc::new(RefCell::new(Instruction::new(1, Operator::Ret(-1), None)));
+        let b0_insr_2 = Rc::new(RefCell::new(Instruction::new(2, Operator::End, None)));
+
+        let main_block = BasicBlock::from(
+            vec![b0_insr_1, b0_insr_2],
+            main_block_identifier_map,
+            ControlFlowEdge::Leaf,
+            None,
+            main_block_dom_instr_map,
+        );
+
+        let expected_body = Body::from(0, vec![main_block]);
+
+        let expected_const_body = ConstBody::from(HashSet::from([1]));
+
+        assert_eq_sorted!(body, expected_body);
+        assert_eq_sorted!(const_body, expected_const_body);
+    }
+
+    #[test]
+    fn simple_void_return() {
+        /*
+        return
+        */
+        let tokens = [Token::Return];
+
+        let mut const_body = ConstBody::new();
+
+        let body = BodyParser::parse(
+            &mut tokens.map(|t| Ok(t)).into_iter().peekable(),
+            &mut const_body,
+        );
+
+        // Block 0
+        let main_block_identifier_map = InheritingHashMap::new();
+        let main_block_dom_instr_map = InheritingHashMap::new();
+
+        let b0_insr_1 = Rc::new(RefCell::new(Instruction::new(1, Operator::End, None)));
+
+        let main_block = BasicBlock::from(
+            vec![b0_insr_1],
+            main_block_identifier_map,
+            ControlFlowEdge::Leaf,
+            None,
+            main_block_dom_instr_map,
+        );
+
+        let expected_body = Body::from(0, vec![main_block]);
+
+        let expected_const_body = ConstBody::new();
 
         assert_eq_sorted!(body, expected_body);
         assert_eq_sorted!(const_body, expected_const_body);

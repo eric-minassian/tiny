@@ -109,6 +109,7 @@ pub enum Operator {
     UnconditionalBranch(BasicBlockId),
     StoredBinaryOp(StoredBinaryOpcode, InstructionId, InstructionId),
     End,
+    Ret(InstructionId),
     Read,
     Write(InstructionId),
     WriteNL,
