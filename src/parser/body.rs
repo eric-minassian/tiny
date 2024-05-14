@@ -47,12 +47,28 @@ where
         }
     }
 
-    fn get_block_mut(&mut self, id: BlockIndex) -> &mut BasicBlock {
-        self.body.get_mut_block(id).unwrap()
+    fn get_block_mut(&mut self, index: BlockIndex) -> &mut BasicBlock {
+        self.body.get_mut_block(index).unwrap()
     }
 
     fn match_token(&mut self, expected: Token) -> Result<()> {
         match_token(&mut self.tokens, expected)
+    }
+
+    fn create_block(&mut self, parent_block: BlockIndex) -> BlockIndex {
+        let identifier_map = InheritingHashMap::with_dominator(
+            self.get_block_mut(parent_block).get_identifier_map(),
+        );
+        let dom_instr_map =
+            InheritingHashMap::with_dominator(self.get_block_mut(parent_block).get_dom_instr_map());
+        let new_block = BasicBlock::from(
+            Vec::new(),
+            identifier_map,
+            ControlFlowEdge::Leaf,
+            Some(parent_block),
+            dom_instr_map,
+        );
+        self.body.insert_block(new_block)
     }
 
     fn phi_detect(&self) -> Vec<IdentifierId> {
@@ -126,10 +142,7 @@ where
 
         match token {
             Ok(Token::Let) => self.assignment(),
-            Ok(Token::Call) => {
-                let _ = self.func_call()?;
-                Ok(())
-            }
+            Ok(Token::Call) => self.func_call().map(|_| ()),
             Ok(Token::If) => self.if_statement(),
             Ok(Token::While) => self.while_statement(),
             Ok(Token::Return) => self.return_statement(),
@@ -141,26 +154,22 @@ where
         self.match_token(Token::Return)?;
 
         if let Ok(result_id) = self.expression() {
-            let return_instruction_id = self.next_instr_id;
-            self.next_instr_id += 1;
-
             let return_instruction = Rc::new(RefCell::new(Instruction::new(
-                return_instruction_id,
+                self.next_instr_id,
                 Operator::Ret(result_id),
                 None,
             )));
+            self.next_instr_id += 1;
             self.get_block_mut(self.cur_block)
                 .push_instr(return_instruction);
         }
 
-        let end_instr_id = self.next_instr_id;
-        self.next_instr_id += 1;
-
         let end_instr = Rc::new(RefCell::new(Instruction::new(
-            end_instr_id,
+            self.next_instr_id,
             Operator::End,
             None,
         )));
+        self.next_instr_id += 1;
         self.get_block_mut(self.cur_block).push_instr(end_instr);
 
         Ok(())
@@ -169,102 +178,71 @@ where
     fn while_statement(&mut self) -> Result<()> {
         self.match_token(Token::While)?;
 
-        let join_block_dominance_instruction_map = InheritingHashMap::with_dominator(
-            self.get_block_mut(self.cur_block).get_dom_instr_map(),
-        );
-        let join_block_identifier_map = InheritingHashMap::with_dominator(
-            self.get_block_mut(self.cur_block).get_identifier_map(),
-        );
-
-        let join_block_id = self.body.insert_block(BasicBlock::from(
-            Vec::new(),
-            join_block_identifier_map,
-            ControlFlowEdge::Leaf,
-            Some(self.cur_block),
-            join_block_dominance_instruction_map,
-        ));
-
+        let join_block = self.create_block(self.cur_block);
         self.get_block_mut(self.cur_block)
-            .update_edge(ControlFlowEdge::Fallthrough(join_block_id));
-
-        self.cur_block = join_block_id;
+            .update_edge(ControlFlowEdge::Fallthrough(join_block));
+        self.cur_block = join_block;
 
         let phis = self.phi_detect();
         for phi in phis.clone() {
             let id_val = self
-                .get_block_mut(join_block_id)
+                .get_block_mut(join_block)
                 .get_identifier(&phi)
                 .unwrap_or_else(|| self.const_body.insert_returning_id(0));
 
             let phi_id = self.handle_binary_op(StoredBinaryOpcode::Phi, id_val, 0, false);
 
-            self.get_block_mut(join_block_id)
+            self.get_block_mut(join_block)
                 .insert_identifier(phi, phi_id);
         }
 
         let (comparator_instruction_id, opposite_relop) = self.relation()?;
-        let join_block_branch_id = self.next_instr_id;
-        self.next_instr_id += 1;
-
         self.match_token(Token::Do)?;
 
-        let body_block_dom_instr_map = InheritingHashMap::with_dominator(
-            self.get_block_mut(join_block_id).get_dom_instr_map(),
-        );
-        let body_block_identifier_map = InheritingHashMap::with_dominator(
-            self.get_block_mut(join_block_id).get_identifier_map(),
-        );
-        let body_block_id = self.body.insert_block(BasicBlock::from(
-            Vec::new(),
-            body_block_identifier_map,
-            ControlFlowEdge::Leaf,
-            Some(join_block_id),
-            body_block_dom_instr_map,
-        ));
+        let join_block_branch_id = self.next_instr_id; // TODO
+        self.next_instr_id += 1; // TODO
 
-        self.get_block_mut(join_block_id)
-            .update_edge(ControlFlowEdge::Fallthrough(body_block_id));
-        self.cur_block = body_block_id;
+        let body_block = self.create_block(join_block);
+        self.get_block_mut(join_block)
+            .update_edge(ControlFlowEdge::Fallthrough(body_block));
+        self.cur_block = body_block;
 
         self.stat_sequence()?;
-
         self.match_token(Token::Od)?;
 
-        let body_block_end_id = self.cur_block;
+        let body_block_end = self.cur_block;
 
-        self.get_block_mut(body_block_end_id)
-            .update_edge(ControlFlowEdge::Branch(join_block_id));
+        self.get_block_mut(body_block_end)
+            .update_edge(ControlFlowEdge::Branch(join_block));
 
-        let body_block_branch_id = self.next_instr_id;
-        self.next_instr_id += 1;
         let body_block_end_instr = Rc::new(RefCell::new(Instruction::new(
-            body_block_branch_id,
-            Operator::UnconditionalBranch(join_block_id),
+            self.next_instr_id,
+            Operator::UnconditionalBranch(join_block),
             None,
         )));
-
-        self.get_block_mut(body_block_end_id)
+        self.next_instr_id += 1;
+        self.get_block_mut(body_block_end)
             .push_instr(body_block_end_instr);
 
-        self.cur_block = join_block_id;
+        self.cur_block = join_block;
 
         let phi_len = phis.len();
-        for (i, phi) in phis.clone().into_iter().enumerate() {
+        for (i, phi) in phis.into_iter().enumerate() {
             let new_id_val = self
-                .get_block_mut(body_block_end_id)
+                .get_block_mut(body_block_end)
                 .get_identifier(&phi)
                 .unwrap_or_else(|| self.const_body.insert_returning_id(0));
 
-            let join_block_instructions_len = self.get_block_mut(join_block_id).instructions.len();
+            let join_block_instructions_len = self.get_block_mut(join_block).instructions.len();
 
-            let temp = self.get_block_mut(join_block_id).instructions
+            let temp = self.get_block_mut(join_block).instructions
                 [join_block_instructions_len - phi_len - 1 + i]
                 .borrow()
                 .operator()
                 .clone();
 
             if let Operator::StoredBinaryOp(StoredBinaryOpcode::Phi, old_val, _) = temp {
-                self.get_block_mut(join_block_id).instructions
+                self.get_block_mut(join_block).instructions
                     [join_block_instructions_len - phi_len - 1 + i]
                     .borrow_mut()
                     .update_operator(Operator::StoredBinaryOp(
@@ -277,33 +255,20 @@ where
             }
         }
 
-        let escape_block_identifier_map = InheritingHashMap::with_dominator(
-            self.get_block_mut(join_block_id).get_identifier_map(),
-        );
-        let escape_block_dom_instr_map = InheritingHashMap::with_dominator(
-            self.get_block_mut(join_block_id).get_dom_instr_map(),
-        );
+        let escape_block = self.create_block(join_block);
 
-        let escape_block_id = self.body.insert_block(BasicBlock::from(
-            Vec::new(),
-            escape_block_identifier_map,
-            ControlFlowEdge::Leaf,
-            Some(join_block_id),
-            escape_block_dom_instr_map,
-        ));
-
-        self.get_block_mut(join_block_id)
+        self.get_block_mut(join_block)
             .push_instr(Rc::new(RefCell::new(Instruction::new(
                 join_block_branch_id,
                 Operator::Branch(
                     BranchOpcode::from(opposite_relop),
-                    escape_block_id,
+                    escape_block,
                     comparator_instruction_id,
                 ),
                 None,
             ))));
 
-        self.cur_block = escape_block_id;
+        self.cur_block = escape_block;
 
         Ok(())
     }
@@ -312,35 +277,20 @@ where
         self.match_token(Token::If)?;
 
         let phis = self.phi_detect();
-
         let (comparator_instruction_id, opposite_relop) = self.relation()?;
-
         self.match_token(Token::Then)?;
 
-        let branch_block_id = self.cur_block;
+        let branch_block = self.cur_block;
         let branch_instruction_id = self.next_instr_id;
         self.next_instr_id += 1;
 
-        let then_block_identifier_map = InheritingHashMap::with_dominator(
-            self.get_block_mut(branch_block_id).get_identifier_map(),
-        );
-        let then_block_dom_instr_map = InheritingHashMap::with_dominator(
-            self.get_block_mut(branch_block_id).get_dom_instr_map(),
-        );
-        let then_block_id = self.body.insert_block(BasicBlock::from(
-            Vec::new(),
-            then_block_identifier_map,
-            ControlFlowEdge::Leaf,
-            Some(branch_block_id),
-            then_block_dom_instr_map,
-        ));
+        let then_block = self.create_block(branch_block);
+        self.cur_block = then_block;
+        self.get_block_mut(branch_block)
+            .update_edge(ControlFlowEdge::Fallthrough(then_block));
 
-        self.get_block_mut(branch_block_id)
-            .update_edge(ControlFlowEdge::Fallthrough(then_block_id));
-
-        self.cur_block = then_block_id;
         self.stat_sequence()?;
-        let then_block_end_id = self.cur_block;
+        let then_block_end = self.cur_block;
 
         let is_else_present = matches!(
             self.tokens
@@ -348,88 +298,60 @@ where
                 .ok_or_else(|| Error::UnexpectedEndOfFile)?,
             Ok(Token::Else)
         );
-
         if is_else_present {
             self.tokens.next();
-
-            let else_block_identifier_map = InheritingHashMap::with_dominator(
-                self.get_block_mut(branch_block_id).get_identifier_map(),
-            );
-            let else_block_dom_instr_map = InheritingHashMap::with_dominator(
-                self.get_block_mut(branch_block_id).get_dom_instr_map(),
-            );
-            let else_block_id = self.body.insert_block(BasicBlock::from(
-                Vec::new(),
-                else_block_identifier_map,
-                ControlFlowEdge::Leaf,
-                Some(branch_block_id),
-                else_block_dom_instr_map,
-            ));
-
-            self.cur_block = else_block_id;
+            let else_block = self.create_block(branch_block);
+            self.cur_block = else_block;
             self.stat_sequence()?;
         }
 
         self.match_token(Token::Fi)?;
 
-        let join_block_identifier_map = InheritingHashMap::with_dominator(
-            self.get_block_mut(branch_block_id).get_identifier_map(),
-        );
-        let join_block_dom_instr_map = InheritingHashMap::with_dominator(
-            self.get_block_mut(branch_block_id).get_dom_instr_map(),
-        );
-
-        let join_block_id = self.body.insert_block(BasicBlock::from(
-            Vec::new(),
-            join_block_identifier_map,
-            ControlFlowEdge::Leaf,
-            Some(branch_block_id),
-            join_block_dom_instr_map,
-        ));
+        let join_block = self.create_block(branch_block);
 
         if is_else_present {
             self.get_block_mut(self.cur_block)
-                .update_edge(ControlFlowEdge::Fallthrough(join_block_id));
+                .update_edge(ControlFlowEdge::Fallthrough(join_block));
         }
 
-        self.get_block_mut(then_block_end_id)
+        self.get_block_mut(then_block_end)
             .update_edge(if is_else_present {
-                ControlFlowEdge::Branch(join_block_id)
+                ControlFlowEdge::Branch(join_block)
             } else {
-                ControlFlowEdge::Fallthrough(join_block_id)
+                ControlFlowEdge::Fallthrough(join_block)
             });
 
-        let else_block_end_id = self.cur_block;
+        let else_block_end = self.cur_block;
 
-        self.get_block_mut(branch_block_id)
+        self.get_block_mut(branch_block)
             .push_instr(Rc::new(RefCell::new(Instruction::new(
                 branch_instruction_id,
                 Operator::Branch(
                     BranchOpcode::from(opposite_relop),
                     if is_else_present {
-                        else_block_end_id
+                        else_block_end
                     } else {
-                        join_block_id
+                        join_block
                     },
                     comparator_instruction_id,
                 ),
                 None,
             ))));
 
-        self.cur_block = join_block_id;
+        self.cur_block = join_block;
 
         for phi in phis {
             let left_id_val = self
-                .get_block_mut(then_block_end_id)
+                .get_block_mut(then_block_end)
                 .get_identifier(&phi)
                 .unwrap_or_else(|| self.const_body.insert_returning_id(0));
 
             let right_id_val = if is_else_present {
-                self.get_block_mut(else_block_end_id)
+                self.get_block_mut(else_block_end)
                     .get_identifier(&phi)
                     .unwrap_or_else(|| self.const_body.insert_returning_id(0))
             } else {
-                self.get_block_mut(branch_block_id)
+                self.get_block_mut(branch_block)
                     .get_identifier(&phi)
                     .unwrap_or_else(|| self.const_body.insert_returning_id(0))
             };
@@ -437,7 +359,7 @@ where
             let phi_id =
                 self.handle_binary_op(StoredBinaryOpcode::Phi, left_id_val, right_id_val, false);
 
-            self.get_block_mut(join_block_id)
+            self.get_block_mut(join_block)
                 .insert_identifier(phi, phi_id);
         }
 
@@ -447,12 +369,11 @@ where
     fn func_call(&mut self) -> Result<InstructionId> {
         self.match_token(Token::Call)?;
 
-        let next_token = self
+        match self
             .tokens
             .next()
-            .ok_or_else(|| Error::UnexpectedEndOfFile)??;
-
-        match next_token {
+            .ok_or_else(|| Error::UnexpectedEndOfFile)??
+        {
             Token::Identifier(identifier) => {
                 if let Ok(Token::LPar) = self
                     .tokens
@@ -613,10 +534,8 @@ where
         };
 
         let new_instr = Rc::new(RefCell::new(new_instr));
-
         self.get_block_mut(self.cur_block)
             .push_instr(new_instr.clone());
-
         self.next_instr_id += 1;
 
         new_instr_id
