@@ -3,7 +3,7 @@ use std::{cell::RefCell, collections::HashSet, iter::Peekable, rc::Rc};
 use crate::{
     error::{Error, Result},
     ir::{
-        block::{BasicBlock, BasicBlockId, Body, ControlFlowEdge},
+        block::{BasicBlock, BlockIndex, Body, ControlFlowEdge},
         inheriting_hashmap::InheritingHashMap,
         ssa::{BranchOpcode, Instruction, InstructionId, Operator, StoredBinaryOpcode},
         ConstBody,
@@ -20,7 +20,7 @@ where
     tokens: &'a mut Peekable<T>,
     const_body: &'a mut ConstBody,
     body: Body,
-    cur_block: BasicBlockId,
+    cur_block: BlockIndex,
     next_instr_id: InstructionId,
 }
 
@@ -47,7 +47,7 @@ where
         }
     }
 
-    fn get_block_mut(&mut self, id: BasicBlockId) -> &mut BasicBlock {
+    fn get_block_mut(&mut self, id: BlockIndex) -> &mut BasicBlock {
         self.body.get_mut_block(id).unwrap()
     }
 
@@ -717,7 +717,7 @@ mod tests {
     use pretty_assertions_sorted::assert_eq_sorted;
     use std::{cell::RefCell, collections::HashSet, rc::Rc};
 
-    use crate::lexer::{PredefinedFunction, RelOp, Tokenizer};
+    use crate::lexer::{PredefinedFunction, RelOp};
 
     #[test]
     fn simple_assignment() {
@@ -846,7 +846,7 @@ mod tests {
             None,
             main_block_dom_instr_map,
         );
-        let expected_body = Body::from(0, vec![main_block]);
+        let expected_body = Body::from(0.into(), vec![main_block]);
 
         let expected_const_body = ConstBody::from(HashSet::from([0, 1, 2, 3, 4]));
 
@@ -900,7 +900,7 @@ mod tests {
             None,
             main_block_dom_instr_map,
         );
-        let expected_body = Body::from(0, vec![main_block]);
+        let expected_body = Body::from(0.into(), vec![main_block]);
 
         let expected_const_body = ConstBody::from(HashSet::from([1, 3]));
 
@@ -981,7 +981,7 @@ mod tests {
             None,
             main_block_dom_instr_map,
         );
-        let expected_body = Body::from(0, vec![main_block]);
+        let expected_body = Body::from(0.into(), vec![main_block]);
 
         let expected_const_body = ConstBody::from(HashSet::from([1, 3]));
 
@@ -1040,7 +1040,7 @@ mod tests {
         )));
         let b0_insr_2 = Rc::new(RefCell::new(Instruction::new(
             2,
-            Operator::Branch(BranchOpcode::Ge, 2, 1),
+            Operator::Branch(BranchOpcode::Ge, 2.into(), 1),
             None,
         )));
 
@@ -1051,7 +1051,7 @@ mod tests {
         let main_block = BasicBlock::from(
             vec![b0_insr_1, b0_insr_2],
             main_block_identifier_map,
-            ControlFlowEdge::Fallthrough(1),
+            ControlFlowEdge::Fallthrough(1.into()),
             None,
             main_block_dom_instr_map,
         );
@@ -1066,8 +1066,8 @@ mod tests {
         let then_block = BasicBlock::from(
             Vec::new(),
             then_block_identifier_map,
-            ControlFlowEdge::Branch(3),
-            Some(0),
+            ControlFlowEdge::Branch(3.into()),
+            Some(0.into()),
             then_block_dom_instr_map,
         );
 
@@ -1081,8 +1081,8 @@ mod tests {
         let else_block = BasicBlock::from(
             Vec::new(),
             else_block_identifier_map,
-            ControlFlowEdge::Fallthrough(3),
-            Some(0),
+            ControlFlowEdge::Fallthrough(3.into()),
+            Some(0.into()),
             else_block_dom_instr_map,
         );
 
@@ -1104,11 +1104,14 @@ mod tests {
             vec![b3_insr_1],
             join_block_identifier_map,
             ControlFlowEdge::Leaf,
-            Some(0),
+            Some(0.into()),
             join_block_dom_instr_map,
         );
 
-        let expected_body = Body::from(0, vec![main_block, then_block, else_block, join_block]);
+        let expected_body = Body::from(
+            0.into(),
+            vec![main_block, then_block, else_block, join_block],
+        );
 
         let expected_const_body = ConstBody::from(HashSet::from([1, 2, 4]));
 
@@ -1186,7 +1189,7 @@ mod tests {
         )));
         let b0_insr_3 = Rc::new(RefCell::new(Instruction::new(
             3,
-            Operator::Branch(BranchOpcode::Ge, 2, 2),
+            Operator::Branch(BranchOpcode::Ge, 2.into(), 2),
             None,
         )));
 
@@ -1199,7 +1202,7 @@ mod tests {
         let main_block = BasicBlock::from(
             vec![b0_insr_1.clone(), b0_insr_2.clone(), b0_insr_3],
             main_block_identifier_map,
-            ControlFlowEdge::Fallthrough(1),
+            ControlFlowEdge::Fallthrough(1.into()),
             None,
             main_block_dom_instr_map,
         );
@@ -1222,8 +1225,8 @@ mod tests {
         let then_block = BasicBlock::from(
             vec![b1_insr_1.clone()],
             then_block_identifier_map,
-            ControlFlowEdge::Branch(3),
-            Some(0),
+            ControlFlowEdge::Branch(3.into()),
+            Some(0.into()),
             then_block_dom_instr_map,
         );
 
@@ -1237,8 +1240,8 @@ mod tests {
         let else_block = BasicBlock::from(
             Vec::new(),
             else_block_identifier_map,
-            ControlFlowEdge::Fallthrough(3),
-            Some(0),
+            ControlFlowEdge::Fallthrough(3.into()),
+            Some(0.into()),
             else_block_dom_instr_map,
         );
 
@@ -1266,11 +1269,14 @@ mod tests {
             vec![b3_insr_1, b3_insr_2],
             join_block_identifier_map,
             ControlFlowEdge::Leaf,
-            Some(0),
+            Some(0.into()),
             join_block_dom_instr_map,
         );
 
-        let expected_body = Body::from(0, vec![main_block, then_block, else_block, join_block]);
+        let expected_body = Body::from(
+            0.into(),
+            vec![main_block, then_block, else_block, join_block],
+        );
 
         let expected_const_body = ConstBody::from(HashSet::from([0, 1, 2, 4]));
 
@@ -1334,7 +1340,7 @@ mod tests {
         )));
         let b0_insr_2 = Rc::new(RefCell::new(Instruction::new(
             2,
-            Operator::Branch(BranchOpcode::Ge, 2, 1),
+            Operator::Branch(BranchOpcode::Ge, 2.into(), 1),
             None,
         )));
 
@@ -1345,7 +1351,7 @@ mod tests {
         let main_block = BasicBlock::from(
             vec![b0_insr_1.clone(), b0_insr_2],
             main_block_identifier_map,
-            ControlFlowEdge::Fallthrough(1),
+            ControlFlowEdge::Fallthrough(1.into()),
             None,
             main_block_dom_instr_map,
         );
@@ -1361,8 +1367,8 @@ mod tests {
         let then_block = BasicBlock::from(
             Vec::new(),
             then_block_identifier_map,
-            ControlFlowEdge::Branch(3),
-            Some(0),
+            ControlFlowEdge::Branch(3.into()),
+            Some(0.into()),
             then_block_dom_instr_map,
         );
 
@@ -1376,8 +1382,8 @@ mod tests {
         let else_block = BasicBlock::from(
             Vec::new(),
             else_block_identifier_map,
-            ControlFlowEdge::Fallthrough(3),
-            Some(0),
+            ControlFlowEdge::Fallthrough(3.into()),
+            Some(0.into()),
             else_block_dom_instr_map,
         );
 
@@ -1405,11 +1411,14 @@ mod tests {
             vec![b3_insr_1, b3_insr_2],
             join_block_identifier_map,
             ControlFlowEdge::Leaf,
-            Some(0),
+            Some(0.into()),
             join_block_dom_instr_map,
         );
 
-        let expected_body = Body::from(0, vec![main_block, then_block, else_block, join_block]);
+        let expected_body = Body::from(
+            0.into(),
+            vec![main_block, then_block, else_block, join_block],
+        );
 
         let expected_const_body = ConstBody::from(HashSet::from([0, 1, 2, 4, 13]));
 
@@ -1459,7 +1468,7 @@ mod tests {
         )));
         let b0_insr_2 = Rc::new(RefCell::new(Instruction::new(
             2,
-            Operator::Branch(BranchOpcode::Ne, 2, 1),
+            Operator::Branch(BranchOpcode::Ne, 2.into(), 1),
             None,
         )));
 
@@ -1470,7 +1479,7 @@ mod tests {
         let main_block = BasicBlock::from(
             vec![b0_insr_1.clone(), b0_insr_2],
             main_block_identifier_map,
-            ControlFlowEdge::Fallthrough(1),
+            ControlFlowEdge::Fallthrough(1.into()),
             None,
             main_block_dom_instr_map,
         );
@@ -1485,8 +1494,8 @@ mod tests {
         let then_block = BasicBlock::from(
             Vec::new(),
             then_block_identifier_map,
-            ControlFlowEdge::Fallthrough(2),
-            Some(0),
+            ControlFlowEdge::Fallthrough(2.into()),
+            Some(0.into()),
             then_block_dom_instr_map,
         );
 
@@ -1508,11 +1517,11 @@ mod tests {
             vec![b2_insr_1],
             join_block_identifier_map,
             ControlFlowEdge::Leaf,
-            Some(0),
+            Some(0.into()),
             join_block_dom_instr_map,
         );
 
-        let expected_body = Body::from(0, vec![main_block, then_block, join_block]);
+        let expected_body = Body::from(0.into(), vec![main_block, then_block, join_block]);
 
         let expected_const_body = ConstBody::from(HashSet::from([1, 2]));
 
@@ -1592,7 +1601,7 @@ mod tests {
         )));
         let b0_insr_2 = Rc::new(RefCell::new(Instruction::new(
             2,
-            Operator::Branch(BranchOpcode::Le, 5, 1),
+            Operator::Branch(BranchOpcode::Le, 5.into(), 1),
             None,
         )));
 
@@ -1603,7 +1612,7 @@ mod tests {
         let main_block = BasicBlock::from(
             vec![b0_insr_1.clone(), b0_insr_2],
             main_block_identifier_map,
-            ControlFlowEdge::Fallthrough(1),
+            ControlFlowEdge::Fallthrough(1.into()),
             None,
             main_block_dom_instr_map,
         );
@@ -1616,7 +1625,7 @@ mod tests {
         )));
         let b1_insr_2 = Rc::new(RefCell::new(Instruction::new(
             4,
-            Operator::Branch(BranchOpcode::Ge, 3, 3),
+            Operator::Branch(BranchOpcode::Ge, 3.into(), 3),
             None,
         )));
 
@@ -1629,8 +1638,8 @@ mod tests {
         let then_block = BasicBlock::from(
             vec![b1_insr_1.clone(), b1_insr_2],
             then_block_identifier_map,
-            ControlFlowEdge::Fallthrough(2),
-            Some(0),
+            ControlFlowEdge::Fallthrough(2.into()),
+            Some(0.into()),
             then_block_dom_instr_map,
         );
 
@@ -1644,8 +1653,8 @@ mod tests {
         let sub_then_block = BasicBlock::from(
             Vec::new(),
             sub_then_block_identifier_map,
-            ControlFlowEdge::Branch(4),
-            Some(1),
+            ControlFlowEdge::Branch(4.into()),
+            Some(1.into()),
             sub_then_block_dom_instr_map,
         );
 
@@ -1660,8 +1669,8 @@ mod tests {
         let sub_else_block = BasicBlock::from(
             Vec::new(),
             sub_else_block_identifier_map,
-            ControlFlowEdge::Fallthrough(4),
-            Some(1),
+            ControlFlowEdge::Fallthrough(4.into()),
+            Some(1.into()),
             sub_else_block_dom_instr_map,
         );
 
@@ -1688,8 +1697,8 @@ mod tests {
         let sub_join_block = BasicBlock::from(
             vec![b4_insr_1.clone(), b4_insr_2.clone()],
             sub_join_block_identifier_map,
-            ControlFlowEdge::Branch(6),
-            Some(1),
+            ControlFlowEdge::Branch(6.into()),
+            Some(1.into()),
             sub_join_block_dom_instr_map,
         );
 
@@ -1703,8 +1712,8 @@ mod tests {
         let else_block = BasicBlock::from(
             Vec::new(),
             else_block_identifier_map,
-            ControlFlowEdge::Fallthrough(6),
-            Some(0),
+            ControlFlowEdge::Fallthrough(6.into()),
+            Some(0.into()),
             else_block_dom_instr_map,
         );
 
@@ -1732,12 +1741,12 @@ mod tests {
             vec![b6_insr_1.clone(), b6_insr_2.clone()],
             join_block_identifier_map,
             ControlFlowEdge::Leaf,
-            Some(0),
+            Some(0.into()),
             join_block_dom_instr_map,
         );
 
         let expected_body = Body::from(
-            0,
+            0.into(),
             vec![
                 main_block,
                 then_block,
@@ -1797,7 +1806,7 @@ mod tests {
         let main_block = BasicBlock::from(
             Vec::new(),
             main_block_identifier_map,
-            ControlFlowEdge::Fallthrough(1),
+            ControlFlowEdge::Fallthrough(1.into()),
             None,
             InheritingHashMap::new(),
         );
@@ -1815,7 +1824,7 @@ mod tests {
         )));
         let b1_insr_3 = Rc::new(RefCell::new(Instruction::new(
             3,
-            Operator::Branch(BranchOpcode::Ge, 3, 2),
+            Operator::Branch(BranchOpcode::Ge, 3.into(), 2),
             None,
         )));
 
@@ -1830,8 +1839,8 @@ mod tests {
         let join_block = BasicBlock::from(
             vec![b1_insr_1.clone(), b1_insr_2.clone(), b1_insr_3],
             join_block_identifier_map,
-            ControlFlowEdge::Fallthrough(2),
-            Some(0),
+            ControlFlowEdge::Fallthrough(2.into()),
+            Some(0.into()),
             join_block_dom_instr_map,
         );
 
@@ -1843,7 +1852,7 @@ mod tests {
         )));
         let b2_insr_2 = Rc::new(RefCell::new(Instruction::new(
             5,
-            Operator::UnconditionalBranch(1),
+            Operator::UnconditionalBranch(1.into()),
             None,
         )));
 
@@ -1857,8 +1866,8 @@ mod tests {
         let body_block = BasicBlock::from(
             vec![b2_insr_1.clone(), b2_insr_2],
             body_block_identifier_map,
-            ControlFlowEdge::Branch(1),
-            Some(1),
+            ControlFlowEdge::Branch(1.into()),
+            Some(1.into()),
             body_block_dom_instr_map,
         );
 
@@ -1872,11 +1881,14 @@ mod tests {
             Vec::new(),
             escape_block_identifier_map,
             ControlFlowEdge::Leaf,
-            Some(1),
+            Some(1.into()),
             escape_block_dom_instr_map,
         );
 
-        let expected_body = Body::from(0, vec![main_block, join_block, body_block, escape_block]);
+        let expected_body = Body::from(
+            0.into(),
+            vec![main_block, join_block, body_block, escape_block],
+        );
 
         let expected_const_body = ConstBody::from(HashSet::from([1, 3]));
 
@@ -1992,7 +2004,7 @@ mod tests {
         let main_block = BasicBlock::from(
             Vec::new(),
             main_block_identifier_map,
-            ControlFlowEdge::Fallthrough(1),
+            ControlFlowEdge::Fallthrough(1.into()),
             None,
             InheritingHashMap::new(),
         );
@@ -2034,7 +2046,7 @@ mod tests {
         )));
         let b1_insr_6 = Rc::new(RefCell::new(Instruction::new(
             6,
-            Operator::Branch(BranchOpcode::Ge, 6, 5),
+            Operator::Branch(BranchOpcode::Ge, 6.into(), 5),
             None,
         )));
 
@@ -2059,8 +2071,8 @@ mod tests {
                 b1_insr_6.clone(),
             ],
             join_block_identifier_map,
-            ControlFlowEdge::Fallthrough(2),
-            Some(0),
+            ControlFlowEdge::Fallthrough(2.into()),
+            Some(0.into()),
             join_block_dom_instr_map,
         );
 
@@ -2087,8 +2099,8 @@ mod tests {
         let body_block = BasicBlock::from(
             vec![b2_insr_1.clone(), b2_insr_2.clone()],
             body_block_identifier_map,
-            ControlFlowEdge::Fallthrough(3),
-            Some(1),
+            ControlFlowEdge::Fallthrough(3.into()),
+            Some(1.into()),
             body_block_dom_instr_map,
         );
 
@@ -2122,7 +2134,7 @@ mod tests {
         )));
         let b3_insr_5 = Rc::new(RefCell::new(Instruction::new(
             13,
-            Operator::Branch(BranchOpcode::Ge, 5, 12),
+            Operator::Branch(BranchOpcode::Ge, 5.into(), 12),
             None,
         )));
 
@@ -2145,8 +2157,8 @@ mod tests {
                 b3_insr_5.clone(),
             ],
             join_block_2_identifier_map,
-            ControlFlowEdge::Fallthrough(4),
-            Some(2),
+            ControlFlowEdge::Fallthrough(4.into()),
+            Some(2.into()),
             join_block_2_dom_instr_map,
         );
 
@@ -2158,7 +2170,7 @@ mod tests {
         )));
         let b4_insr_4 = Rc::new(RefCell::new(Instruction::new(
             15,
-            Operator::UnconditionalBranch(3),
+            Operator::UnconditionalBranch(3.into()),
             None,
         )));
 
@@ -2174,15 +2186,15 @@ mod tests {
         let body_block_2 = BasicBlock::from(
             vec![b4_insr_1.clone(), b4_insr_4.clone()],
             body_block_2_identifier_map,
-            ControlFlowEdge::Branch(3),
-            Some(3),
+            ControlFlowEdge::Branch(3.into()),
+            Some(3.into()),
             body_block_2_dom_instr_map,
         );
 
         // Block 5
         let b5_insr_1 = Rc::new(RefCell::new(Instruction::new(
             16,
-            Operator::UnconditionalBranch(1),
+            Operator::UnconditionalBranch(1.into()),
             None,
         )));
 
@@ -2195,8 +2207,8 @@ mod tests {
         let escape_block2 = BasicBlock::from(
             vec![b5_insr_1.clone()],
             escape_block_2_identifier_map,
-            ControlFlowEdge::Branch(1),
-            Some(3),
+            ControlFlowEdge::Branch(1.into()),
+            Some(3.into()),
             escape_block_2_dom_instr_map,
         );
 
@@ -2210,12 +2222,12 @@ mod tests {
             Vec::new(),
             escape_block_identifier_map,
             ControlFlowEdge::Leaf,
-            Some(1),
+            Some(1.into()),
             escape_block_dom_instr_map,
         );
 
         let expected_body = Body::from(
-            0,
+            0.into(),
             vec![
                 main_block,
                 join_block,
@@ -2271,7 +2283,7 @@ mod tests {
             main_block_dom_instr_map,
         );
 
-        let expected_body = Body::from(0, vec![main_block]);
+        let expected_body = Body::from(0.into(), vec![main_block]);
 
         let expected_const_body = ConstBody::from(HashSet::from([1]));
 
@@ -2307,7 +2319,7 @@ mod tests {
             main_block_dom_instr_map,
         );
 
-        let expected_body = Body::from(0, vec![main_block]);
+        let expected_body = Body::from(0.into(), vec![main_block]);
 
         let expected_const_body = ConstBody::new();
 
@@ -2380,7 +2392,7 @@ mod tests {
             main_block_dom_instr_map,
         );
 
-        let expected_body = Body::from(0, vec![main_block]);
+        let expected_body = Body::from(0.into(), vec![main_block]);
         let expected_const_body = ConstBody::from(HashSet::new());
 
         assert_eq_sorted!(body, expected_body);
@@ -2500,7 +2512,7 @@ mod tests {
             main_block_dom_instr_map,
         );
 
-        let expected_body = Body::from(0, vec![main_block]);
+        let expected_body = Body::from(0.into(), vec![main_block]);
         let expected_const_body = ConstBody::from(HashSet::from([1]));
 
         assert_eq_sorted!(body, expected_body);
