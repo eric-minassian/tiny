@@ -2,7 +2,7 @@ use std::{cell::RefCell, mem::discriminant, rc::Rc};
 
 use crate::lexer::RelOp;
 
-use super::block::BasicBlockId;
+use super::block::BlockIndex;
 
 pub type InstructionId = i32;
 
@@ -69,6 +69,12 @@ impl Instruction {
     }
 }
 
+impl std::fmt::Display for Instruction {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}: {}", self.id, self.operator)
+    }
+}
+
 #[derive(Debug, PartialEq, Eq, Hash, Clone)]
 pub enum StoredBinaryOpcode {
     Add,
@@ -79,6 +85,19 @@ pub enum StoredBinaryOpcode {
     Phi,
 }
 
+impl std::fmt::Display for StoredBinaryOpcode {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            StoredBinaryOpcode::Add => write!(f, "add"),
+            StoredBinaryOpcode::Sub => write!(f, "sub"),
+            StoredBinaryOpcode::Mul => write!(f, "mul"),
+            StoredBinaryOpcode::Div => write!(f, "div"),
+            StoredBinaryOpcode::Cmp => write!(f, "cmp"),
+            StoredBinaryOpcode::Phi => write!(f, "phi"),
+        }
+    }
+}
+
 #[derive(Debug, PartialEq, Clone)]
 pub enum BranchOpcode {
     Eq,
@@ -87,6 +106,19 @@ pub enum BranchOpcode {
     Lt,
     Ge,
     Gt,
+}
+
+impl std::fmt::Display for BranchOpcode {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            BranchOpcode::Eq => write!(f, "beq"),
+            BranchOpcode::Ne => write!(f, "bne"),
+            BranchOpcode::Le => write!(f, "ble"),
+            BranchOpcode::Lt => write!(f, "blt"),
+            BranchOpcode::Ge => write!(f, "bge"),
+            BranchOpcode::Gt => write!(f, "bgt"),
+        }
+    }
 }
 
 impl From<RelOp> for BranchOpcode {
@@ -105,8 +137,8 @@ impl From<RelOp> for BranchOpcode {
 #[derive(Debug, PartialEq, Clone)]
 pub enum Operator {
     Const(u32),
-    Branch(BranchOpcode, BasicBlockId, InstructionId),
-    UnconditionalBranch(BasicBlockId),
+    Branch(BranchOpcode, BlockIndex, InstructionId),
+    UnconditionalBranch(BlockIndex),
     StoredBinaryOp(StoredBinaryOpcode, InstructionId, InstructionId),
     End,
     Ret(InstructionId),
@@ -116,6 +148,29 @@ pub enum Operator {
     GetPar { idx: u8, val: InstructionId },
     SetPar { idx: u8, val: InstructionId },
     Jsr(InstructionId),
+}
+
+impl std::fmt::Display for Operator {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Operator::Const(val) => write!(f, "const #{}", val),
+            Operator::Branch(op, block_index, cmp_id) => {
+                write!(f, "{} {} {}", op, block_index, cmp_id)
+            }
+            Operator::UnconditionalBranch(basic_block) => write!(f, "bra {}", basic_block),
+            Operator::StoredBinaryOp(op, lhs, rhs) => {
+                write!(f, "{:} {} {}", op, lhs, rhs)
+            }
+            Operator::End => write!(f, "end"),
+            Operator::Ret(val) => write!(f, "ret {}", val),
+            Operator::Read => write!(f, "read"),
+            Operator::Write(val) => write!(f, "write {}", val),
+            Operator::WriteNL => write!(f, "writeNL"),
+            Operator::GetPar { idx, val } => write!(f, "getpar{} {}", idx, val),
+            Operator::SetPar { idx, val } => write!(f, "setpar{} {}", idx, val),
+            Operator::Jsr(val) => write!(f, "jsr {}", val),
+        }
+    }
 }
 
 #[cfg(test)]
