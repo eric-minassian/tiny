@@ -1,4 +1,4 @@
-use std::{cell::RefCell, collections::HashSet, iter::Peekable, rc::Rc};
+use std::{cell::RefCell, iter::Peekable, rc::Rc};
 
 use crate::{
     error::{Error, Result},
@@ -72,39 +72,53 @@ where
     }
 
     fn phi_detect(&self) -> Vec<IdentifierId> {
-        let tokens = self.tokens.clone();
-        let mut identifier_ids = HashSet::new();
+        let mut tokens = self.tokens.clone();
+        let mut identifier_ids = vec![];
+        let mut current_block = vec![];
+
         let mut i = 1;
         let mut is_let = false;
 
-        for token in tokens {
+        while let Some(token) = tokens.next() {
             match token {
                 Ok(Token::Let) => {
                     is_let = true;
                 }
                 Ok(Token::Identifier(id)) => {
                     if is_let {
-                        identifier_ids.insert(id);
+                        current_block.push(id);
                     }
 
                     is_let = false;
                 }
-                Ok(Token::While | Token::If) => {
+                Ok(Token::While | Token::If | Token::Then) => {
                     i += 1;
                 }
-                Ok(Token::Od | Token::Fi) => {
+                Ok(Token::Od | Token::Fi | Token::Else) => {
                     i -= 1;
+
+                    identifier_ids.extend(current_block.iter().cloned());
+                    current_block.clear();
+
+                    if i == 0 {
+                        break;
+                    }
+                }
+                Ok(Token::Return) => {
+                    current_block.clear();
+
+                    while let Some(_) = tokens
+                        .next_if(|t| matches!(t, Ok(Token::Fi) | Ok(Token::Od) | Ok(Token::Else)))
+                    {
+                    }
                 }
                 _ => (),
-            }
-
-            if i == 0 {
-                break;
             }
         }
 
         let mut identifier_ids = identifier_ids.into_iter().collect::<Vec<_>>();
         identifier_ids.sort();
+        identifier_ids.dedup();
 
         identifier_ids
     }
@@ -199,8 +213,8 @@ where
         let (comparator_instruction_id, opposite_relop) = self.relation()?;
         self.match_token(Token::Do)?;
 
-        let join_block_branch_id = self.next_instr_id; // TODO
-        self.next_instr_id += 1; // TODO
+        let join_block_branch_id = self.next_instr_id;
+        self.next_instr_id += 1;
 
         let body_block = self.create_block(join_block);
         self.get_block_mut(join_block)
@@ -2241,6 +2255,124 @@ mod tests {
         let expected_body = Body::from(0.into(), vec![main_block]);
 
         let expected_const_body = ConstBody::new();
+
+        assert_eq_sorted!(body, expected_body);
+        assert_eq_sorted!(const_body, expected_const_body);
+    }
+
+    // @TODO: Parser should remove unreachable blocks
+    #[test]
+    fn loop_body_return() {
+        /*
+        let x <- 1;
+        while x < 3 do
+            return x
+        od;
+        */
+        let tokens = [
+            Token::Let,
+            Token::Identifier(1),
+            Token::Assignment,
+            Token::Number(1),
+            Token::Semicolon,
+            Token::While,
+            Token::Identifier(1),
+            Token::RelOp(RelOp::Lt),
+            Token::Number(3),
+            Token::Do,
+            Token::Return,
+            Token::Identifier(1),
+            Token::Od,
+            Token::Semicolon,
+        ];
+
+        let mut const_body = ConstBody::new();
+
+        let body = BodyParser::parse(
+            &mut tokens.map(|t| Ok(t)).into_iter().peekable(),
+            &mut const_body,
+        );
+
+        // Block 0
+        let main_block_identifier_map = InheritingHashMap::from_iter([(1, -1)]);
+        let main_block_dom_instr_map = InheritingHashMap::new();
+
+        let main_block = BasicBlock::from(
+            Vec::new(),
+            main_block_identifier_map,
+            ControlFlowEdge::Fallthrough(1.into()),
+            None,
+            main_block_dom_instr_map,
+        );
+
+        // Block 1
+        let b1_insr_1 = Rc::new(RefCell::new(Instruction::new(
+            1,
+            Operator::StoredBinaryOp(StoredBinaryOpcode::Cmp, -1, -3),
+            None,
+        )));
+        let b1_insr_2 = Rc::new(RefCell::new(Instruction::new(
+            2,
+            Operator::Branch(BranchOpcode::Ge, 3.into(), 1),
+            None,
+        )));
+
+        let join_block_identifier_map =
+            InheritingHashMap::with_dominator(main_block.get_identifier_map());
+        let mut join_block_dom_instr_map =
+            InheritingHashMap::with_dominator(main_block.get_dom_instr_map());
+        join_block_dom_instr_map.insert(StoredBinaryOpcode::Cmp, b1_insr_1.clone());
+
+        let join_block = BasicBlock::from(
+            vec![b1_insr_1, b1_insr_2],
+            join_block_identifier_map,
+            ControlFlowEdge::Fallthrough(2.into()),
+            Some(0.into()),
+            join_block_dom_instr_map,
+        );
+
+        // Block 2
+        let b2_insr_1 = Rc::new(RefCell::new(Instruction::new(3, Operator::Ret(-1), None)));
+        let b2_insr_2 = Rc::new(RefCell::new(Instruction::new(4, Operator::End, None)));
+        let b2_insr_3 = Rc::new(RefCell::new(Instruction::new(
+            5,
+            Operator::UnconditionalBranch(1.into()),
+            None,
+        )));
+
+        let body_block_identifier_map =
+            InheritingHashMap::with_dominator(join_block.get_identifier_map());
+        let body_block_dom_instr_map =
+            InheritingHashMap::with_dominator(join_block.get_dom_instr_map());
+
+        let body_block = BasicBlock::from(
+            vec![b2_insr_1, b2_insr_2, b2_insr_3],
+            body_block_identifier_map,
+            ControlFlowEdge::Branch(1.into()),
+            Some(1.into()),
+            body_block_dom_instr_map,
+        );
+
+        // Block 3
+        let escape_block_identifier_map =
+            InheritingHashMap::with_dominator(join_block.get_identifier_map());
+        let escape_block_dom_instr_map =
+            InheritingHashMap::with_dominator(join_block.get_dom_instr_map());
+
+        let escape_block = BasicBlock::from(
+            Vec::new(),
+            escape_block_identifier_map,
+            ControlFlowEdge::Leaf,
+            Some(1.into()),
+            escape_block_dom_instr_map,
+        );
+
+        let expected_body = Body::from(
+            0.into(),
+            vec![main_block, join_block, body_block, escape_block],
+        );
+
+        let expected_const_body = ConstBody::from(HashSet::from([1, 3]));
 
         assert_eq_sorted!(body, expected_body);
         assert_eq_sorted!(const_body, expected_const_body);
