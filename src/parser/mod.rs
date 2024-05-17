@@ -75,7 +75,7 @@ where
 
         let main_body = BodyParser::parse_main(&mut self.tokens, &mut self.store.const_block);
 
-        self.store.insert("main".to_string(), main_body);
+        self.store.insert_body("main".to_string(), main_body);
 
         self.match_token(Token::RBrack)?;
         self.match_token(Token::Period)?;
@@ -145,7 +145,7 @@ where
 
         let body = self.func_body(params)?;
 
-        self.store.insert(id.to_string(), body);
+        self.store.insert_body(id.to_string(), body);
 
         self.match_token(Token::Semicolon)?;
 
@@ -176,6 +176,8 @@ where
 
 #[cfg(test)]
 mod tests {
+    use crate::lexer::PredefinedFunction;
+
     use super::*;
 
     #[test]
@@ -268,6 +270,86 @@ mod tests {
         );
 
         assert!(parser.var_decl().is_err());
+    }
+
+    #[test]
+    fn simple_func_decl() {
+        let tokens = [
+            Token::Function,
+            Token::Identifier(0),
+            Token::LPar,
+            Token::RPar,
+            Token::Semicolon,
+            Token::LBrack,
+            Token::RBrack,
+            Token::Semicolon,
+        ];
+
+        let mut parser = Parser::from(
+            tokens.into_iter().map(|token| Ok(token)).peekable(),
+            IrStore::new(),
+        );
+
+        assert!(parser.func_decl().is_ok());
+        assert_eq!(parser.store.get_body("0").unwrap(), &Body::new());
+    }
+
+    #[test]
+    fn void_func_decl() {
+        let tokens = [
+            Token::Void,
+            Token::Function,
+            Token::Identifier(0),
+            Token::LPar,
+            Token::RPar,
+            Token::Semicolon,
+            Token::LBrack,
+            Token::RBrack,
+            Token::Semicolon,
+        ];
+
+        let mut parser = Parser::from(
+            tokens.into_iter().map(|token| Ok(token)).peekable(),
+            IrStore::new(),
+        );
+
+        assert!(parser.func_decl().is_ok());
+        assert_eq!(parser.store.get_body("0").unwrap(), &Body::new());
+    }
+
+    #[test]
+    fn func_decl_with_params_and_body() {
+        let tokens = [
+            Token::Function,
+            Token::Identifier(0),
+            Token::LPar,
+            Token::Identifier(1),
+            Token::RPar,
+            Token::Semicolon,
+            Token::LBrack,
+            Token::Let,
+            Token::Identifier(2),
+            Token::Assignment,
+            Token::Number(42),
+            Token::Add,
+            Token::Identifier(1),
+            Token::Semicolon,
+            Token::Call,
+            Token::PredefinedFunction(PredefinedFunction::OutputNum),
+            Token::LPar,
+            Token::Identifier(2),
+            Token::RPar,
+            Token::RBrack,
+            Token::Semicolon,
+        ];
+
+        let mut parser = Parser::from(
+            tokens.into_iter().map(|token| Ok(token)).peekable(),
+            IrStore::new(),
+        );
+
+        assert!(parser.func_decl().is_ok());
+        assert!(parser.store.get_body("0").is_some());
     }
 
     #[test]

@@ -29,7 +29,11 @@ impl IrStore {
         }
     }
 
-    pub fn insert(&mut self, name: String, body: Body) {
+    pub fn get_body(&self, name: &str) -> Option<&Body> {
+        self.bodies.get(name)
+    }
+
+    pub fn insert_body(&mut self, name: String, body: Body) {
         self.bodies.insert(name, body);
     }
 
