@@ -2578,4 +2578,129 @@ mod tests {
         assert_eq_sorted!(body, expected_body);
         assert_eq_sorted!(const_body, expected_const_body);
     }
+
+    #[test]
+    fn commutative_cse() {
+        /*
+        let a <- call InputNum();
+        let b <- call InputNum();
+        let c <- call InputNum();
+        let d <- call InputNum();
+
+        call OutputNum(a * b + c * d);
+        call OutputNum(d * c + b * a)
+        */
+
+        let tokens = [
+            Token::Let,
+            Token::Identifier(1),
+            Token::Assignment,
+            Token::Call,
+            Token::PredefinedFunction(PredefinedFunction::InputNum),
+            Token::LPar,
+            Token::RPar,
+            Token::Semicolon,
+            Token::Let,
+            Token::Identifier(2),
+            Token::Assignment,
+            Token::Call,
+            Token::PredefinedFunction(PredefinedFunction::InputNum),
+            Token::LPar,
+            Token::RPar,
+            Token::Semicolon,
+            Token::Let,
+            Token::Identifier(3),
+            Token::Assignment,
+            Token::Call,
+            Token::PredefinedFunction(PredefinedFunction::InputNum),
+            Token::LPar,
+            Token::RPar,
+            Token::Semicolon,
+            Token::Let,
+            Token::Identifier(4),
+            Token::Assignment,
+            Token::Call,
+            Token::PredefinedFunction(PredefinedFunction::InputNum),
+            Token::LPar,
+            Token::RPar,
+            Token::Semicolon,
+            Token::Call,
+            Token::PredefinedFunction(PredefinedFunction::OutputNum),
+            Token::LPar,
+            Token::Identifier(1),
+            Token::Mul,
+            Token::Identifier(2),
+            Token::Add,
+            Token::Identifier(3),
+            Token::Mul,
+            Token::Identifier(4),
+            Token::RPar,
+            Token::Semicolon,
+            Token::Call,
+            Token::PredefinedFunction(PredefinedFunction::OutputNum),
+            Token::LPar,
+            Token::Identifier(4),
+            Token::Mul,
+            Token::Identifier(3),
+            Token::Add,
+            Token::Identifier(2),
+            Token::Mul,
+            Token::Identifier(1),
+            Token::RPar,
+        ];
+
+        let mut const_body = ConstBlock::new();
+
+        let body = BodyParser::parse_main(
+            &mut tokens.map(|t| Ok(t)).into_iter().peekable(),
+            &mut const_body,
+        );
+
+        // Block 0
+        let b0_insr_1 = Rc::new(RefCell::new(Instruction::new(1, Operator::Read, None)));
+        let b0_insr_2 = Rc::new(RefCell::new(Instruction::new(2, Operator::Read, None)));
+        let b0_insr_3 = Rc::new(RefCell::new(Instruction::new(3, Operator::Read, None)));
+        let b0_insr_4 = Rc::new(RefCell::new(Instruction::new(4, Operator::Read, None)));
+        let b0_insr_5 = Rc::new(RefCell::new(Instruction::new(
+            5,
+            Operator::StoredBinaryOp(StoredBinaryOpcode::Mul, 1, 2),
+            None,
+        )));
+        let b0_insr_6 = Rc::new(RefCell::new(Instruction::new(
+            6,
+            Operator::StoredBinaryOp(StoredBinaryOpcode::Mul, 3, 4),
+            Some(b0_insr_5.clone()),
+        )));
+        let b0_insr_7 = Rc::new(RefCell::new(Instruction::new(
+            7,
+            Operator::StoredBinaryOp(StoredBinaryOpcode::Add, 5, 6),
+            None,
+        )));
+        let b0_insr_8 = Rc::new(RefCell::new(Instruction::new(8, Operator::Write(7), None)));
+        let b0_insr_9 = Rc::new(RefCell::new(Instruction::new(9, Operator::Write(7), None)));
+
+        let main_block_identifier_map =
+            InheritingHashMap::from_iter([(1, 1), (2, 2), (3, 3), (4, 4)]);
+        let main_block_dom_instr_map = InheritingHashMap::from_iter([
+            (StoredBinaryOpcode::Mul, b0_insr_6.clone()),
+            (StoredBinaryOpcode::Add, b0_insr_7.clone()),
+        ]);
+
+        let main_block = BasicBlock::from(
+            vec![
+                b0_insr_1, b0_insr_2, b0_insr_3, b0_insr_4, b0_insr_5, b0_insr_6, b0_insr_7,
+                b0_insr_8, b0_insr_9,
+            ],
+            main_block_identifier_map,
+            ControlFlowEdge::Leaf,
+            None,
+            main_block_dom_instr_map,
+        );
+
+        let expected_body = Body::from(Some(0.into()), vec![main_block]);
+        let expected_const_body = ConstBlock::from(HashSet::new());
+
+        assert_eq_sorted!(body, expected_body);
+        assert_eq_sorted!(const_body, expected_const_body);
+    }
 }

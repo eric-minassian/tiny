@@ -132,7 +132,7 @@ impl From<RelOp> for BranchOpcode {
     }
 }
 
-#[derive(Debug, PartialEq, Clone)]
+#[derive(Debug, Clone)]
 pub enum Operator {
     Const(u32),
     Branch(BranchOpcode, BlockIndex, InstructionId),
@@ -147,6 +147,49 @@ pub enum Operator {
     GetPar { idx: u8 },
     SetPar { idx: u8, val: InstructionId },
     Jsr(InstructionId),
+}
+
+impl PartialEq for Operator {
+    fn eq(&self, other: &Self) -> bool {
+        match (self, other) {
+            (
+                Operator::StoredBinaryOp(StoredBinaryOpcode::Cmp, lhs1, rhs1),
+                Operator::StoredBinaryOp(StoredBinaryOpcode::Cmp, lhs2, rhs2),
+            ) => lhs1 == lhs2 && rhs1 == rhs2,
+            (
+                Operator::StoredBinaryOp(op1, lhs1, rhs1),
+                Operator::StoredBinaryOp(op2, lhs2, rhs2),
+            ) => op1 == op2 && ((lhs1 == lhs2 && rhs1 == rhs2) || (lhs1 == rhs2 && rhs1 == lhs2)),
+            (Operator::Const(val1), Operator::Const(val2)) => val1 == val2,
+            (
+                Operator::Branch(op1, block_index1, cmp_id1),
+                Operator::Branch(op2, block_index2, cmp_id2),
+            ) => op1 == op2 && block_index1 == block_index2 && cmp_id1 == cmp_id2,
+            (
+                Operator::UnconditionalBranch(block_index1),
+                Operator::UnconditionalBranch(block_index2),
+            ) => block_index1 == block_index2,
+            (Operator::End, Operator::End) => true,
+            (Operator::Ret(val1), Operator::Ret(val2)) => val1 == val2,
+            (Operator::Read, Operator::Read) => true,
+            (Operator::Write(val1), Operator::Write(val2)) => val1 == val2,
+            (Operator::WriteNL, Operator::WriteNL) => true,
+            (Operator::GetPar { idx: idx1 }, Operator::GetPar { idx: idx2 }) => idx1 == idx2,
+            (
+                Operator::SetPar {
+                    idx: idx1,
+                    val: val1,
+                },
+                Operator::SetPar {
+                    idx: idx2,
+                    val: val2,
+                },
+            ) => idx1 == idx2 && val1 == val2,
+            (Operator::Jsr(val1), Operator::Jsr(val2)) => val1 == val2,
+            (Operator::Phi(lhs1, rhs1), Operator::Phi(lhs2, rhs2)) => lhs1 == lhs2 && rhs1 == rhs2,
+            _ => false,
+        }
+    }
 }
 
 impl std::fmt::Display for Operator {
