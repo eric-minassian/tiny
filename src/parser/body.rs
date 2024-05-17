@@ -75,7 +75,7 @@ where
             let get_param_instr_id = self.next_instr_id;
             let get_param_instr = Rc::new(RefCell::new(Instruction::new(
                 get_param_instr_id,
-                Operator::GetPar { idx: i as u8 },
+                Operator::GetPar { idx: i as u8 + 1 },
                 None,
             )));
             self.next_instr_id += 1;
@@ -450,7 +450,7 @@ where
                             let arg_instr = Rc::new(RefCell::new(Instruction::new(
                                 self.next_instr_id,
                                 Operator::SetPar {
-                                    idx: idx as u8,
+                                    idx: idx as u8 + 1,
                                     val,
                                 },
                                 None,
@@ -2532,7 +2532,7 @@ mod tests {
         // Block 0
         let b0_insr_1 = Rc::new(RefCell::new(Instruction::new(
             1,
-            Operator::SetPar { idx: 0, val: -1 },
+            Operator::SetPar { idx: 1, val: -1 },
             None,
         )));
         let b0_insr_2 = Rc::new(RefCell::new(Instruction::new(2, Operator::Jsr(10), None)));
@@ -2542,17 +2542,17 @@ mod tests {
         let b0_insr_6 = Rc::new(RefCell::new(Instruction::new(6, Operator::Jsr(14), None)));
         let b0_insr_7 = Rc::new(RefCell::new(Instruction::new(
             7,
-            Operator::SetPar { idx: 0, val: -1 },
+            Operator::SetPar { idx: 1, val: -1 },
             None,
         )));
         let b0_insr_8 = Rc::new(RefCell::new(Instruction::new(
             8,
-            Operator::SetPar { idx: 1, val: 2 },
+            Operator::SetPar { idx: 2, val: 2 },
             None,
         )));
         let b0_insr_9 = Rc::new(RefCell::new(Instruction::new(
             9,
-            Operator::SetPar { idx: 2, val: 3 },
+            Operator::SetPar { idx: 3, val: 3 },
             None,
         )));
         let b0_insr_10 = Rc::new(RefCell::new(Instruction::new(10, Operator::Jsr(15), None)));
