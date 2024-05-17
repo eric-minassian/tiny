@@ -5,7 +5,7 @@ use crate::{
     ir::{
         block::{BasicBlock, BlockIndex, Body, ControlFlowEdge},
         inheriting_hashmap::InheritingHashMap,
-        ssa::{BranchOpcode, Instruction, InstructionId, Operator, StoredBinaryOpcode},
+        instruction::{BranchOpcode, Instruction, InstructionId, Operator, StoredBinaryOpcode},
         ConstBlock,
     },
     lexer::{IdentifierId, PredefinedFunction, RelOp, Token},
@@ -237,7 +237,14 @@ where
                 .get_identifier(&phi)
                 .unwrap_or_else(|| self.const_body.insert_returning_id(0));
 
-            let phi_id = self.handle_binary_op(StoredBinaryOpcode::Phi, id_val, 0, false);
+            let phi_id = self.next_instr_id;
+            let phi_instr = Rc::new(RefCell::new(Instruction::new(
+                phi_id,
+                Operator::Phi(id_val, 0),
+                None,
+            )));
+            self.get_block_mut(join_block).push_instr(phi_instr);
+            self.next_instr_id += 1;
 
             self.get_block_mut(join_block)
                 .insert_identifier(phi, phi_id);
@@ -288,15 +295,11 @@ where
                 .operator()
                 .clone();
 
-            if let Operator::StoredBinaryOp(StoredBinaryOpcode::Phi, old_val, _) = temp {
+            if let Operator::Phi(old_val, _) = temp {
                 self.get_block_mut(join_block).instructions
                     [join_block_instructions_len - phi_len - 1 + i]
                     .borrow_mut()
-                    .update_operator(Operator::StoredBinaryOp(
-                        StoredBinaryOpcode::Phi,
-                        old_val,
-                        new_id_val,
-                    ));
+                    .update_operator(Operator::Phi(old_val, new_id_val));
             } else {
                 panic!("Expected Phi Operator: {:?}", temp);
             }
@@ -403,8 +406,14 @@ where
                     .unwrap_or_else(|| self.const_body.insert_returning_id(0))
             };
 
-            let phi_id =
-                self.handle_binary_op(StoredBinaryOpcode::Phi, left_id_val, right_id_val, false);
+            let phi_id = self.next_instr_id;
+            let phi_instr = Rc::new(RefCell::new(Instruction::new(
+                phi_id,
+                Operator::Phi(left_id_val, right_id_val),
+                None,
+            )));
+            self.get_block_mut(join_block).push_instr(phi_instr);
+            self.next_instr_id += 1;
 
             self.get_block_mut(join_block)
                 .insert_identifier(phi, phi_id);
@@ -543,7 +552,7 @@ where
             Token::RelOp(relop) => {
                 let right = self.expression()?;
                 Ok((
-                    self.handle_binary_op(StoredBinaryOpcode::Cmp, left, right, true),
+                    self.handle_binary_op(StoredBinaryOpcode::Cmp, left, right),
                     relop.opposite(),
                 ))
             }
@@ -556,7 +565,6 @@ where
         operator: StoredBinaryOpcode,
         left: InstructionId,
         right: InstructionId,
-        cse: bool,
     ) -> InstructionId {
         let new_instr_id = self.next_instr_id;
 
@@ -566,13 +574,10 @@ where
             None,
         );
 
-        if cse {
-            if let Some(dom_instr) = self.get_block_mut(self.cur_block).get_dom_instr(&operator) {
-                if let Some(dup_instr_id) =
-                    dom_instr.try_borrow().unwrap().check_dominators(&new_instr)
-                {
-                    return dup_instr_id;
-                }
+        if let Some(dom_instr) = self.get_block_mut(self.cur_block).get_dom_instr(&operator) {
+            if let Some(dup_instr_id) = dom_instr.try_borrow().unwrap().check_dominators(&new_instr)
+            {
+                return dup_instr_id;
             }
         }
 
@@ -596,12 +601,12 @@ where
                 Ok(Token::Add) => {
                     self.tokens.next();
                     let right = self.term()?;
-                    left = self.handle_binary_op(StoredBinaryOpcode::Add, left, right, true);
+                    left = self.handle_binary_op(StoredBinaryOpcode::Add, left, right);
                 }
                 Ok(Token::Sub) => {
                     self.tokens.next();
                     let right = self.term()?;
-                    left = self.handle_binary_op(StoredBinaryOpcode::Sub, left, right, true);
+                    left = self.handle_binary_op(StoredBinaryOpcode::Sub, left, right);
                 }
 
                 _ => break,
@@ -619,12 +624,12 @@ where
                 Ok(Token::Mul) => {
                     self.tokens.next();
                     let right = self.factor()?;
-                    left = self.handle_binary_op(StoredBinaryOpcode::Mul, left, right, true);
+                    left = self.handle_binary_op(StoredBinaryOpcode::Mul, left, right);
                 }
                 Ok(Token::Div) => {
                     self.tokens.next();
                     let right = self.factor()?;
-                    left = self.handle_binary_op(StoredBinaryOpcode::Div, left, right, true);
+                    left = self.handle_binary_op(StoredBinaryOpcode::Div, left, right);
                 }
                 _ => break,
             }
@@ -1055,16 +1060,15 @@ mod tests {
         // Block 3
         let b3_insr_1 = Rc::new(RefCell::new(Instruction::new(
             3,
-            Operator::StoredBinaryOp(StoredBinaryOpcode::Phi, -2, -4),
+            Operator::Phi(-2, -4),
             None,
         )));
 
         let mut join_block_identifier_map =
             InheritingHashMap::with_dominator(main_block.get_identifier_map());
         join_block_identifier_map.insert(1, 3);
-        let mut join_block_dom_instr_map =
+        let join_block_dom_instr_map =
             InheritingHashMap::with_dominator(main_block.get_dom_instr_map());
-        join_block_dom_instr_map.insert(StoredBinaryOpcode::Phi, b3_insr_1.clone());
 
         let join_block = BasicBlock::from(
             vec![b3_insr_1],
@@ -1212,24 +1216,15 @@ mod tests {
         );
 
         // Block 3
-        let b3_insr_1 = Rc::new(RefCell::new(Instruction::new(
-            5,
-            Operator::StoredBinaryOp(StoredBinaryOpcode::Phi, 4, 1),
-            None,
-        )));
-        let b3_insr_2 = Rc::new(RefCell::new(Instruction::new(
-            6,
-            Operator::StoredBinaryOp(StoredBinaryOpcode::Phi, 1, 0),
-            Some(b3_insr_1.clone()),
-        )));
+        let b3_insr_1 = Rc::new(RefCell::new(Instruction::new(5, Operator::Phi(4, 1), None)));
+        let b3_insr_2 = Rc::new(RefCell::new(Instruction::new(6, Operator::Phi(1, 0), None)));
 
         let mut join_block_identifier_map =
             InheritingHashMap::with_dominator(main_block.get_identifier_map());
         join_block_identifier_map.insert(1, 5);
         join_block_identifier_map.insert(2, 6);
-        let mut join_block_dom_instr_map =
+        let join_block_dom_instr_map =
             InheritingHashMap::with_dominator(main_block.get_dom_instr_map());
-        join_block_dom_instr_map.insert(StoredBinaryOpcode::Phi, b3_insr_2.clone());
 
         let join_block = BasicBlock::from(
             vec![b3_insr_1, b3_insr_2],
@@ -1356,22 +1351,21 @@ mod tests {
         // Block 3
         let b3_insr_1 = Rc::new(RefCell::new(Instruction::new(
             3,
-            Operator::StoredBinaryOp(StoredBinaryOpcode::Phi, -2, -4),
+            Operator::Phi(-2, -4),
             None,
         )));
         let b3_insr_2 = Rc::new(RefCell::new(Instruction::new(
             4,
-            Operator::StoredBinaryOp(StoredBinaryOpcode::Phi, -13, 0),
-            Some(b3_insr_1.clone()),
+            Operator::Phi(-13, 0),
+            None,
         )));
 
         let mut join_block_identifier_map =
             InheritingHashMap::with_dominator(main_block.get_identifier_map());
         join_block_identifier_map.insert(2, 3);
         join_block_identifier_map.insert(3, 4);
-        let mut join_block_dom_instr_map =
+        let join_block_dom_instr_map =
             InheritingHashMap::with_dominator(main_block.get_dom_instr_map());
-        join_block_dom_instr_map.insert(StoredBinaryOpcode::Phi, b3_insr_2.clone());
 
         let join_block = BasicBlock::from(
             vec![b3_insr_1, b3_insr_2],
@@ -1468,16 +1462,15 @@ mod tests {
         // Block 2
         let b2_insr_1 = Rc::new(RefCell::new(Instruction::new(
             3,
-            Operator::StoredBinaryOp(StoredBinaryOpcode::Phi, -2, -1),
+            Operator::Phi(-2, -1),
             None,
         )));
 
         let mut join_block_identifier_map =
             InheritingHashMap::with_dominator(main_block.get_identifier_map());
         join_block_identifier_map.insert(1, 3);
-        let mut join_block_dom_instr_map =
+        let join_block_dom_instr_map =
             InheritingHashMap::with_dominator(main_block.get_dom_instr_map());
-        join_block_dom_instr_map.insert(StoredBinaryOpcode::Phi, b2_insr_1.clone());
 
         let join_block = BasicBlock::from(
             vec![b2_insr_1],
@@ -1643,22 +1636,21 @@ mod tests {
         // Block 4
         let b4_insr_1 = Rc::new(RefCell::new(Instruction::new(
             5,
-            Operator::StoredBinaryOp(StoredBinaryOpcode::Phi, -3, -4),
+            Operator::Phi(-3, -4),
             None,
         )));
         let b4_insr_2 = Rc::new(RefCell::new(Instruction::new(
             6,
-            Operator::StoredBinaryOp(StoredBinaryOpcode::Phi, 0, -12),
-            Some(b4_insr_1.clone()),
+            Operator::Phi(0, -12),
+            None,
         )));
 
         let mut sub_join_block_identifier_map =
             InheritingHashMap::with_dominator(then_block.get_identifier_map());
         sub_join_block_identifier_map.insert(1, 5);
         sub_join_block_identifier_map.insert(2, 6);
-        let mut sub_join_block_dom_instr_map =
+        let sub_join_block_dom_instr_map =
             InheritingHashMap::with_dominator(then_block.get_dom_instr_map());
-        sub_join_block_dom_instr_map.insert(StoredBinaryOpcode::Phi, b4_insr_2.clone());
 
         let sub_join_block = BasicBlock::from(
             vec![b4_insr_1.clone(), b4_insr_2.clone()],
@@ -1686,22 +1678,17 @@ mod tests {
         // Block 6
         let b6_insr_1 = Rc::new(RefCell::new(Instruction::new(
             7,
-            Operator::StoredBinaryOp(StoredBinaryOpcode::Phi, 5, -5),
+            Operator::Phi(5, -5),
             None,
         )));
-        let b6_insr_2 = Rc::new(RefCell::new(Instruction::new(
-            8,
-            Operator::StoredBinaryOp(StoredBinaryOpcode::Phi, 6, 0),
-            Some(b6_insr_1.clone()),
-        )));
+        let b6_insr_2 = Rc::new(RefCell::new(Instruction::new(8, Operator::Phi(6, 0), None)));
 
         let mut join_block_identifier_map =
             InheritingHashMap::with_dominator(main_block.get_identifier_map());
         join_block_identifier_map.insert(1, 7);
         join_block_identifier_map.insert(2, 8);
-        let mut join_block_dom_instr_map =
+        let join_block_dom_instr_map =
             InheritingHashMap::with_dominator(main_block.get_dom_instr_map());
-        join_block_dom_instr_map.insert(StoredBinaryOpcode::Phi, b6_insr_2.clone());
 
         let join_block = BasicBlock::from(
             vec![b6_insr_1.clone(), b6_insr_2.clone()],
@@ -1780,7 +1767,7 @@ mod tests {
         // Block 1
         let b1_insr_1 = Rc::new(RefCell::new(Instruction::new(
             1,
-            Operator::StoredBinaryOp(StoredBinaryOpcode::Phi, -1, 4),
+            Operator::Phi(-1, 4),
             None,
         )));
         let b1_insr_2 = Rc::new(RefCell::new(Instruction::new(
@@ -1800,7 +1787,6 @@ mod tests {
         let mut join_block_dom_instr_map =
             InheritingHashMap::with_dominator(main_block.get_dom_instr_map());
         join_block_dom_instr_map.insert(StoredBinaryOpcode::Cmp, b1_insr_2.clone());
-        join_block_dom_instr_map.insert(StoredBinaryOpcode::Phi, b1_insr_1.clone());
 
         let join_block = BasicBlock::from(
             vec![b1_insr_1.clone(), b1_insr_2.clone(), b1_insr_3],
@@ -1978,31 +1964,23 @@ mod tests {
         // Block 1
 
         // i
-        let b1_insr_1 = Rc::new(RefCell::new(Instruction::new(
-            1,
-            Operator::StoredBinaryOp(StoredBinaryOpcode::Phi, 0, 7),
-            None,
-        )));
+        let b1_insr_1 = Rc::new(RefCell::new(Instruction::new(1, Operator::Phi(0, 7), None)));
 
         // x
-        let b1_insr_2 = Rc::new(RefCell::new(Instruction::new(
-            2,
-            Operator::StoredBinaryOp(StoredBinaryOpcode::Phi, 0, 9),
-            Some(b1_insr_1.clone()),
-        )));
+        let b1_insr_2 = Rc::new(RefCell::new(Instruction::new(2, Operator::Phi(0, 9), None)));
 
         // y
         let b1_insr_3 = Rc::new(RefCell::new(Instruction::new(
             3,
-            Operator::StoredBinaryOp(StoredBinaryOpcode::Phi, 0, 10),
-            Some(b1_insr_2.clone()),
+            Operator::Phi(0, 10),
+            None,
         )));
 
         // j
         let b1_insr_4 = Rc::new(RefCell::new(Instruction::new(
             4,
-            Operator::StoredBinaryOp(StoredBinaryOpcode::Phi, 0, 11),
-            Some(b1_insr_3.clone()),
+            Operator::Phi(0, 11),
+            None,
         )));
 
         let b1_insr_5 = Rc::new(RefCell::new(Instruction::new(
@@ -2025,7 +2003,6 @@ mod tests {
         let mut join_block_dom_instr_map =
             InheritingHashMap::with_dominator(main_block.get_dom_instr_map());
         join_block_dom_instr_map.insert(StoredBinaryOpcode::Cmp, b1_insr_5.clone());
-        join_block_dom_instr_map.insert(StoredBinaryOpcode::Phi, b1_insr_4.clone());
 
         let join_block = BasicBlock::from(
             vec![
@@ -2075,22 +2052,22 @@ mod tests {
         // x
         let b3_insr_1 = Rc::new(RefCell::new(Instruction::new(
             9,
-            Operator::StoredBinaryOp(StoredBinaryOpcode::Phi, 7, 14),
-            Some(b1_insr_4.clone()),
+            Operator::Phi(7, 14),
+            None,
         )));
 
         // y
         let b3_insr_2 = Rc::new(RefCell::new(Instruction::new(
             10,
-            Operator::StoredBinaryOp(StoredBinaryOpcode::Phi, 8, 7),
-            Some(b3_insr_1.clone()),
+            Operator::Phi(8, 7),
+            None,
         )));
 
         // j
         let b3_insr_3 = Rc::new(RefCell::new(Instruction::new(
             11,
-            Operator::StoredBinaryOp(StoredBinaryOpcode::Phi, 4, 14),
-            Some(b3_insr_2.clone()),
+            Operator::Phi(4, 14),
+            None,
         )));
 
         let b3_insr_4 = Rc::new(RefCell::new(Instruction::new(
@@ -2112,7 +2089,6 @@ mod tests {
         let mut join_block_2_dom_instr_map =
             InheritingHashMap::with_dominator(body_block.get_dom_instr_map());
         join_block_2_dom_instr_map.insert(StoredBinaryOpcode::Cmp, b3_insr_4.clone());
-        join_block_2_dom_instr_map.insert(StoredBinaryOpcode::Phi, b3_insr_3.clone());
 
         let join_block_2 = BasicBlock::from(
             vec![
