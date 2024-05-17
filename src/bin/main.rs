@@ -1,6 +1,6 @@
 use std::{env, fs, process};
 
-use tiny::lexer::Tokenizer;
+use tiny::{lexer::Tokenizer, parser::Parser};
 
 fn main() {
     let args = env::args().collect::<Vec<String>>();
@@ -15,10 +15,15 @@ fn main() {
         process::exit(1);
     });
 
-    let tokenizer = Tokenizer::new(&file);
+    let parser = Parser::parse(Tokenizer::new(&file));
 
-    // Tokenize
-    for token in tokenizer {
-        println!("{:?}", token);
+    match parser {
+        Ok(ir_store) => {
+            println!("{}", ir_store.dot());
+        }
+        Err(e) => {
+            eprintln!("Error parsing file: {:?}", e);
+            process::exit(1);
+        }
     }
 }
