@@ -4,7 +4,7 @@ use crate::lexer::IdentifierId;
 
 use super::{
     inheriting_hashmap::InheritingHashMap,
-    ssa::{Instruction, Operator, StoredBinaryOpcode},
+    instruction::{Instruction, Operator, StoredBinaryOpcode},
     InstructionId,
 };
 

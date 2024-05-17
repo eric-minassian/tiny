@@ -1,12 +1,12 @@
 pub mod block;
 pub mod inheriting_hashmap;
-pub mod ssa;
+pub mod instruction;
 
 use std::collections::{HashMap, HashSet};
 
 use crate::lexer::Number;
 
-use self::{block::Body, ssa::InstructionId};
+use self::{block::Body, instruction::InstructionId};
 
 #[derive(Debug, PartialEq)]
 pub struct IrStore {

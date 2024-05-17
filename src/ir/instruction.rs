@@ -82,7 +82,6 @@ pub enum StoredBinaryOpcode {
     Mul,
     Div,
     Cmp,
-    Phi,
 }
 
 impl std::fmt::Display for StoredBinaryOpcode {
@@ -93,7 +92,6 @@ impl std::fmt::Display for StoredBinaryOpcode {
             StoredBinaryOpcode::Mul => write!(f, "mul"),
             StoredBinaryOpcode::Div => write!(f, "div"),
             StoredBinaryOpcode::Cmp => write!(f, "cmp"),
-            StoredBinaryOpcode::Phi => write!(f, "phi"),
         }
     }
 }
@@ -140,6 +138,7 @@ pub enum Operator {
     Branch(BranchOpcode, BlockIndex, InstructionId),
     UnconditionalBranch(BlockIndex),
     StoredBinaryOp(StoredBinaryOpcode, InstructionId, InstructionId),
+    Phi(InstructionId, InstructionId),
     End,
     Ret(InstructionId),
     Read,
@@ -169,6 +168,7 @@ impl std::fmt::Display for Operator {
             Operator::GetPar { idx } => write!(f, "getpar{}", idx,),
             Operator::SetPar { idx, val } => write!(f, "setpar{} {}", idx, val),
             Operator::Jsr(val) => write!(f, "jsr func#{}", val),
+            Operator::Phi(lhs, rhs) => write!(f, "phi {} {}", lhs, rhs),
         }
     }
 }
