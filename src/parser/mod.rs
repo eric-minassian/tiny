@@ -330,7 +330,7 @@ mod tests {
             Token::Let,
             Token::Identifier(2),
             Token::Assignment,
-            Token::Number(42),
+            Token::Number(22),
             Token::Add,
             Token::Identifier(1),
             Token::Semicolon,
@@ -442,5 +442,47 @@ mod tests {
         );
 
         assert!(parser.formal_param().is_err());
+    }
+
+    #[test]
+    fn empty_func_body() {
+        let tokens = [Token::LBrack, Token::RBrack];
+
+        let mut parser = Parser::from(
+            tokens.into_iter().map(|token| Ok(token)).peekable(),
+            IrStore::new(),
+        );
+
+        let body = parser.func_body(vec![]).unwrap();
+
+        assert_eq!(body, Body::new());
+    }
+
+    #[test]
+    fn func_body_with_var_decl_and_statements() {
+        let tokens = [
+            Token::Var,
+            Token::Identifier(0),
+            Token::Semicolon,
+            Token::LBrack,
+            Token::Let,
+            Token::Identifier(1),
+            Token::Assignment,
+            Token::Number(22),
+            Token::Semicolon,
+            Token::Call,
+            Token::PredefinedFunction(PredefinedFunction::OutputNum),
+            Token::LPar,
+            Token::Identifier(1),
+            Token::RPar,
+            Token::RBrack,
+        ];
+
+        let mut parser = Parser::from(
+            tokens.into_iter().map(|token| Ok(token)).peekable(),
+            IrStore::new(),
+        );
+
+        assert!(parser.func_body(vec![0]).is_ok());
     }
 }
