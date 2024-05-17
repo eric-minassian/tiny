@@ -485,4 +485,52 @@ mod tests {
 
         assert!(parser.func_body(vec![0]).is_ok());
     }
+
+    #[test]
+    fn simple_computation() {
+        let tokens = [
+            Token::Main,
+            Token::Var,
+            Token::Identifier(1),
+            Token::Semicolon,
+            Token::Function,
+            Token::Identifier(2),
+            Token::LPar,
+            Token::Identifier(3),
+            Token::RPar,
+            Token::Semicolon,
+            Token::LBrack,
+            Token::Return,
+            Token::Identifier(3),
+            Token::Sub,
+            Token::Number(1),
+            Token::RBrack,
+            Token::Semicolon,
+            Token::LBrack,
+            Token::Let,
+            Token::Identifier(1),
+            Token::Assignment,
+            Token::Call,
+            Token::Identifier(2),
+            Token::LPar,
+            Token::Number(1),
+            Token::RPar,
+            Token::Semicolon,
+            Token::Call,
+            Token::PredefinedFunction(PredefinedFunction::OutputNum),
+            Token::LPar,
+            Token::Identifier(1),
+            Token::RPar,
+            Token::RBrack,
+            Token::Period,
+        ];
+
+        let mut parser = Parser::from(
+            tokens.into_iter().map(|token| Ok(token)).peekable(),
+            IrStore::new(),
+        );
+
+        assert!(parser.computation().is_ok());
+        assert!(parser.store.get_body("main").is_some());
+    }
 }
