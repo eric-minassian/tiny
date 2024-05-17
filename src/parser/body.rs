@@ -6,7 +6,7 @@ use crate::{
         block::{BasicBlock, BlockIndex, Body, ControlFlowEdge},
         inheriting_hashmap::InheritingHashMap,
         ssa::{BranchOpcode, Instruction, InstructionId, Operator, StoredBinaryOpcode},
-        ConstBody,
+        ConstBlock,
     },
     lexer::{IdentifierId, PredefinedFunction, RelOp, Token},
 };
@@ -18,7 +18,7 @@ where
     T: Iterator<Item = Result<Token>> + Clone,
 {
     tokens: &'a mut Peekable<T>,
-    const_body: &'a mut ConstBody,
+    const_body: &'a mut ConstBlock,
     body: Body,
     cur_block: BlockIndex,
     next_instr_id: InstructionId,
@@ -28,20 +28,35 @@ impl<'a, T> BodyParser<'a, T>
 where
     T: Iterator<Item = Result<Token>> + Clone,
 {
-    pub fn parse(tokens: &'a mut Peekable<T>, const_body: &'a mut ConstBody) -> Body {
+    pub fn parse_main(tokens: &'a mut Peekable<T>, const_body: &'a mut ConstBlock) -> Body {
         let mut body_parser = Self::new(tokens, const_body);
+
         body_parser.stat_sequence().unwrap();
 
         body_parser.body
     }
 
-    fn new(tokens: &'a mut Peekable<T>, const_body: &'a mut ConstBody) -> Self {
-        let body = Body::new();
+    pub fn parse_func(
+        tokens: &'a mut Peekable<T>,
+        const_body: &'a mut ConstBlock,
+        params: Vec<IdentifierId>,
+    ) -> Body {
+        let mut body_parser = Self::new(tokens, const_body);
+        body_parser.parse_func_params(params);
+        body_parser.stat_sequence().unwrap();
+
+        body_parser.body
+    }
+
+    fn new(tokens: &'a mut Peekable<T>, const_body: &'a mut ConstBlock) -> Self {
+        let mut body = Body::new();
+        let cur_block = body.insert_block(BasicBlock::new());
+        body.set_root(cur_block);
 
         Self {
             tokens,
             const_body,
-            cur_block: body.get_root(),
+            cur_block,
             body,
             next_instr_id: 1,
         }
@@ -53,6 +68,24 @@ where
 
     fn match_token(&mut self, expected: Token) -> Result<()> {
         match_token(&mut self.tokens, expected)
+    }
+
+    fn parse_func_params(&mut self, params: Vec<IdentifierId>) {
+        for (i, param) in params.into_iter().enumerate() {
+            let get_param_instr_id = self.next_instr_id;
+            let get_param_instr = Rc::new(RefCell::new(Instruction::new(
+                get_param_instr_id,
+                Operator::GetPar { idx: i as u8 },
+                None,
+            )));
+            self.next_instr_id += 1;
+
+            self.get_block_mut(self.cur_block)
+                .insert_identifier(param, get_param_instr_id);
+
+            self.get_block_mut(self.cur_block)
+                .push_instr(get_param_instr);
+        }
     }
 
     fn create_block(&mut self, parent_block: BlockIndex) -> BlockIndex {
@@ -709,9 +742,9 @@ mod tests {
             Ok(Token::Number(2)),
             Ok(Token::RPar),
         ];
-        let mut const_body = ConstBody::new();
+        let mut const_body = ConstBlock::new();
 
-        let body = BodyParser::parse(&mut tokens.into_iter().peekable(), &mut const_body);
+        let body = BodyParser::parse_main(&mut tokens.into_iter().peekable(), &mut const_body);
 
         // Block 0
         let b0_insr_1 = Rc::new(RefCell::new(Instruction::new(
@@ -779,9 +812,9 @@ mod tests {
             None,
             main_block_dom_instr_map,
         );
-        let expected_body = Body::from(0.into(), vec![main_block]);
+        let expected_body = Body::from(Some(0.into()), vec![main_block]);
 
-        let expected_const_body = ConstBody::from(HashSet::from([0, 1, 2, 3, 4]));
+        let expected_const_body = ConstBlock::from(HashSet::from([0, 1, 2, 3, 4]));
 
         assert_eq_sorted!(body, expected_body);
         assert_eq_sorted!(const_body, expected_const_body);
@@ -809,9 +842,9 @@ mod tests {
             Token::Number(3),
             Token::Semicolon,
         ];
-        let mut const_body = ConstBody::new();
+        let mut const_body = ConstBlock::new();
 
-        let body = BodyParser::parse(
+        let body = BodyParser::parse_main(
             &mut tokens.map(|t| Ok(t)).into_iter().peekable(),
             &mut const_body,
         );
@@ -833,9 +866,9 @@ mod tests {
             None,
             main_block_dom_instr_map,
         );
-        let expected_body = Body::from(0.into(), vec![main_block]);
+        let expected_body = Body::from(Some(0.into()), vec![main_block]);
 
-        let expected_const_body = ConstBody::from(HashSet::from([1, 3]));
+        let expected_const_body = ConstBlock::from(HashSet::from([1, 3]));
 
         assert_eq_sorted!(body, expected_body);
         assert_eq_sorted!(const_body, expected_const_body);
@@ -879,9 +912,9 @@ mod tests {
             Token::Number(3),
             Token::Semicolon,
         ];
-        let mut const_body = ConstBody::new();
+        let mut const_body = ConstBlock::new();
 
-        let body = BodyParser::parse(
+        let body = BodyParser::parse_main(
             &mut tokens.map(|t| Ok(t)).into_iter().peekable(),
             &mut const_body,
         );
@@ -914,9 +947,9 @@ mod tests {
             None,
             main_block_dom_instr_map,
         );
-        let expected_body = Body::from(0.into(), vec![main_block]);
+        let expected_body = Body::from(Some(0.into()), vec![main_block]);
 
-        let expected_const_body = ConstBody::from(HashSet::from([1, 3]));
+        let expected_const_body = ConstBlock::from(HashSet::from([1, 3]));
 
         assert_eq_sorted!(body, expected_body);
         assert_eq_sorted!(const_body, expected_const_body);
@@ -958,9 +991,9 @@ mod tests {
             Token::Semicolon,
         ];
 
-        let mut const_body = ConstBody::new();
+        let mut const_body = ConstBlock::new();
 
-        let body = BodyParser::parse(
+        let body = BodyParser::parse_main(
             &mut tokens.map(|t| Ok(t)).into_iter().peekable(),
             &mut const_body,
         );
@@ -1042,11 +1075,11 @@ mod tests {
         );
 
         let expected_body = Body::from(
-            0.into(),
+            Some(0.into()),
             vec![main_block, then_block, else_block, join_block],
         );
 
-        let expected_const_body = ConstBody::from(HashSet::from([1, 2, 4]));
+        let expected_const_body = ConstBlock::from(HashSet::from([1, 2, 4]));
 
         assert_eq_sorted!(body, expected_body);
         assert_eq_sorted!(const_body, expected_const_body);
@@ -1102,9 +1135,9 @@ mod tests {
             Token::Semicolon,
         ];
 
-        let mut const_body = ConstBody::new();
+        let mut const_body = ConstBlock::new();
 
-        let body = BodyParser::parse(
+        let body = BodyParser::parse_main(
             &mut tokens.map(|t| Ok(t)).into_iter().peekable(),
             &mut const_body,
         );
@@ -1207,11 +1240,11 @@ mod tests {
         );
 
         let expected_body = Body::from(
-            0.into(),
+            Some(0.into()),
             vec![main_block, then_block, else_block, join_block],
         );
 
-        let expected_const_body = ConstBody::from(HashSet::from([0, 1, 2, 4]));
+        let expected_const_body = ConstBlock::from(HashSet::from([0, 1, 2, 4]));
 
         assert_eq_sorted!(body, expected_body);
         assert_eq_sorted!(const_body, expected_const_body);
@@ -1258,9 +1291,9 @@ mod tests {
             Token::Fi,
         ];
 
-        let mut const_body = ConstBody::new();
+        let mut const_body = ConstBlock::new();
 
-        let body = BodyParser::parse(
+        let body = BodyParser::parse_main(
             &mut tokens.map(|t| Ok(t)).into_iter().peekable(),
             &mut const_body,
         );
@@ -1349,11 +1382,11 @@ mod tests {
         );
 
         let expected_body = Body::from(
-            0.into(),
+            Some(0.into()),
             vec![main_block, then_block, else_block, join_block],
         );
 
-        let expected_const_body = ConstBody::from(HashSet::from([0, 1, 2, 4, 13]));
+        let expected_const_body = ConstBlock::from(HashSet::from([0, 1, 2, 4, 13]));
 
         assert_eq_sorted!(body, expected_body);
         assert_eq_sorted!(const_body, expected_const_body);
@@ -1386,9 +1419,9 @@ mod tests {
             Token::Fi,
         ];
 
-        let mut const_body = ConstBody::new();
+        let mut const_body = ConstBlock::new();
 
-        let body = BodyParser::parse(
+        let body = BodyParser::parse_main(
             &mut tokens.map(|t| Ok(t)).into_iter().peekable(),
             &mut const_body,
         );
@@ -1454,9 +1487,9 @@ mod tests {
             join_block_dom_instr_map,
         );
 
-        let expected_body = Body::from(0.into(), vec![main_block, then_block, join_block]);
+        let expected_body = Body::from(Some(0.into()), vec![main_block, then_block, join_block]);
 
-        let expected_const_body = ConstBody::from(HashSet::from([1, 2]));
+        let expected_const_body = ConstBlock::from(HashSet::from([1, 2]));
 
         assert_eq_sorted!(body, expected_body);
         assert_eq_sorted!(const_body, expected_const_body);
@@ -1519,9 +1552,9 @@ mod tests {
             Token::Fi,
         ];
 
-        let mut const_body = ConstBody::new();
+        let mut const_body = ConstBlock::new();
 
-        let body = BodyParser::parse(
+        let body = BodyParser::parse_main(
             &mut tokens.map(|t| Ok(t)).into_iter().peekable(),
             &mut const_body,
         );
@@ -1679,7 +1712,7 @@ mod tests {
         );
 
         let expected_body = Body::from(
-            0.into(),
+            Some(0.into()),
             vec![
                 main_block,
                 then_block,
@@ -1691,7 +1724,7 @@ mod tests {
             ],
         );
 
-        let expected_const_body = ConstBody::from(HashSet::from([0, 1, 3, 4, 5, 12]));
+        let expected_const_body = ConstBlock::from(HashSet::from([0, 1, 3, 4, 5, 12]));
 
         assert_eq_sorted!(body, expected_body);
         assert_eq_sorted!(const_body, expected_const_body);
@@ -1726,9 +1759,9 @@ mod tests {
             Token::Od,
         ];
 
-        let mut const_body = ConstBody::new();
+        let mut const_body = ConstBlock::new();
 
-        let body = BodyParser::parse(
+        let body = BodyParser::parse_main(
             &mut tokens.map(|t| Ok(t)).into_iter().peekable(),
             &mut const_body,
         );
@@ -1819,11 +1852,11 @@ mod tests {
         );
 
         let expected_body = Body::from(
-            0.into(),
+            Some(0.into()),
             vec![main_block, join_block, body_block, escape_block],
         );
 
-        let expected_const_body = ConstBody::from(HashSet::from([1, 3]));
+        let expected_const_body = ConstBlock::from(HashSet::from([1, 3]));
 
         assert_eq_sorted!(body, expected_body);
         assert_eq_sorted!(const_body, expected_const_body);
@@ -1923,9 +1956,9 @@ mod tests {
             Token::Od,
         ];
 
-        let mut const_body = ConstBody::new();
+        let mut const_body = ConstBlock::new();
 
-        let body = BodyParser::parse(
+        let body = BodyParser::parse_main(
             &mut tokens.map(|t| Ok(t)).into_iter().peekable(),
             &mut const_body,
         );
@@ -2160,7 +2193,7 @@ mod tests {
         );
 
         let expected_body = Body::from(
-            0.into(),
+            Some(0.into()),
             vec![
                 main_block,
                 join_block,
@@ -2172,7 +2205,7 @@ mod tests {
             ],
         );
 
-        let expected_const_body = ConstBody::from(HashSet::from([0, 1, 10]));
+        let expected_const_body = ConstBlock::from(HashSet::from([0, 1, 10]));
 
         assert_eq_sorted!(body, expected_body);
         assert_eq_sorted!(const_body, expected_const_body);
@@ -2194,9 +2227,9 @@ mod tests {
             Token::Identifier(1),
         ];
 
-        let mut const_body = ConstBody::new();
+        let mut const_body = ConstBlock::new();
 
-        let body = BodyParser::parse(
+        let body = BodyParser::parse_main(
             &mut tokens.map(|t| Ok(t)).into_iter().peekable(),
             &mut const_body,
         );
@@ -2216,9 +2249,9 @@ mod tests {
             main_block_dom_instr_map,
         );
 
-        let expected_body = Body::from(0.into(), vec![main_block]);
+        let expected_body = Body::from(Some(0.into()), vec![main_block]);
 
-        let expected_const_body = ConstBody::from(HashSet::from([1]));
+        let expected_const_body = ConstBlock::from(HashSet::from([1]));
 
         assert_eq_sorted!(body, expected_body);
         assert_eq_sorted!(const_body, expected_const_body);
@@ -2231,9 +2264,9 @@ mod tests {
         */
         let tokens = [Token::Return];
 
-        let mut const_body = ConstBody::new();
+        let mut const_body = ConstBlock::new();
 
-        let body = BodyParser::parse(
+        let body = BodyParser::parse_main(
             &mut tokens.map(|t| Ok(t)).into_iter().peekable(),
             &mut const_body,
         );
@@ -2252,9 +2285,9 @@ mod tests {
             main_block_dom_instr_map,
         );
 
-        let expected_body = Body::from(0.into(), vec![main_block]);
+        let expected_body = Body::from(Some(0.into()), vec![main_block]);
 
-        let expected_const_body = ConstBody::new();
+        let expected_const_body = ConstBlock::new();
 
         assert_eq_sorted!(body, expected_body);
         assert_eq_sorted!(const_body, expected_const_body);
@@ -2286,9 +2319,9 @@ mod tests {
             Token::Semicolon,
         ];
 
-        let mut const_body = ConstBody::new();
+        let mut const_body = ConstBlock::new();
 
-        let body = BodyParser::parse(
+        let body = BodyParser::parse_main(
             &mut tokens.map(|t| Ok(t)).into_iter().peekable(),
             &mut const_body,
         );
@@ -2368,11 +2401,11 @@ mod tests {
         );
 
         let expected_body = Body::from(
-            0.into(),
+            Some(0.into()),
             vec![main_block, join_block, body_block, escape_block],
         );
 
-        let expected_const_body = ConstBody::from(HashSet::from([1, 3]));
+        let expected_const_body = ConstBlock::from(HashSet::from([1, 3]));
 
         assert_eq_sorted!(body, expected_body);
         assert_eq_sorted!(const_body, expected_const_body);
@@ -2418,9 +2451,9 @@ mod tests {
             Token::RPar,
         ];
 
-        let mut const_body = ConstBody::new();
+        let mut const_body = ConstBlock::new();
 
-        let body = BodyParser::parse(
+        let body = BodyParser::parse_main(
             &mut tokens.map(|t| Ok(t)).into_iter().peekable(),
             &mut const_body,
         );
@@ -2443,8 +2476,8 @@ mod tests {
             main_block_dom_instr_map,
         );
 
-        let expected_body = Body::from(0.into(), vec![main_block]);
-        let expected_const_body = ConstBody::from(HashSet::new());
+        let expected_body = Body::from(Some(0.into()), vec![main_block]);
+        let expected_const_body = ConstBlock::from(HashSet::new());
 
         assert_eq_sorted!(body, expected_body);
         assert_eq_sorted!(const_body, expected_const_body);
@@ -2513,9 +2546,9 @@ mod tests {
             Token::RPar,
         ];
 
-        let mut const_body = ConstBody::new();
+        let mut const_body = ConstBlock::new();
 
-        let body = BodyParser::parse(
+        let body = BodyParser::parse_main(
             &mut tokens.map(|t| Ok(t)).into_iter().peekable(),
             &mut const_body,
         );
@@ -2563,8 +2596,8 @@ mod tests {
             main_block_dom_instr_map,
         );
 
-        let expected_body = Body::from(0.into(), vec![main_block]);
-        let expected_const_body = ConstBody::from(HashSet::from([1]));
+        let expected_body = Body::from(Some(0.into()), vec![main_block]);
+        let expected_const_body = ConstBlock::from(HashSet::from([1]));
 
         assert_eq_sorted!(body, expected_body);
         assert_eq_sorted!(const_body, expected_const_body);

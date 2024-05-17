@@ -145,7 +145,7 @@ pub enum Operator {
     Read,
     Write(InstructionId),
     WriteNL,
-    GetPar { idx: u8, val: InstructionId },
+    GetPar { idx: u8 },
     SetPar { idx: u8, val: InstructionId },
     Jsr(InstructionId),
 }
@@ -166,9 +166,9 @@ impl std::fmt::Display for Operator {
             Operator::Read => write!(f, "read"),
             Operator::Write(val) => write!(f, "write {}", val),
             Operator::WriteNL => write!(f, "writeNL"),
-            Operator::GetPar { idx, val } => write!(f, "getpar{} {}", idx, val),
+            Operator::GetPar { idx } => write!(f, "getpar{}", idx,),
             Operator::SetPar { idx, val } => write!(f, "setpar{} {}", idx, val),
-            Operator::Jsr(val) => write!(f, "jsr {}", val),
+            Operator::Jsr(val) => write!(f, "jsr func#{}", val),
         }
     }
 }

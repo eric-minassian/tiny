@@ -37,24 +37,24 @@ impl std::fmt::Display for BlockIndex {
 
 #[derive(Debug, PartialEq)]
 pub struct Body {
-    root: BlockIndex,
+    root: Option<BlockIndex>,
     blocks: Vec<BasicBlock>,
 }
 
 impl Body {
     pub fn new() -> Self {
         Self {
-            root: BlockIndex::new(0),
-            blocks: vec![BasicBlock::new()],
+            root: None,
+            blocks: Vec::new(),
         }
     }
 
-    pub fn from(root: BlockIndex, blocks: Vec<BasicBlock>) -> Self {
+    pub fn from(root: Option<BlockIndex>, blocks: Vec<BasicBlock>) -> Self {
         Self { root, blocks }
     }
 
-    pub fn get_root(&self) -> BlockIndex {
-        self.root
+    pub fn set_root(&mut self, root: BlockIndex) {
+        self.root = Some(root);
     }
 
     pub fn insert_block(&mut self, block: BasicBlock) -> BlockIndex {
@@ -71,14 +71,17 @@ impl Body {
         self.blocks.get(usize::from(block_index))
     }
 
-    pub fn get_dot(&self) -> String {
+    pub fn dot(&self, name: &str) -> String {
         let mut dot = String::new();
         dot.push_str(
-            "digraph {\n\tnode [shape=record];\n\trankdir=TB;\n\tranksep=1.0;\n\tnodesep=0.5;\n\n",
+            format!("subgraph cluster_{} {{\n\tnode [shape=record];\n\tlabel=\"Function {}\";\n\trankdir=TB;\n\tranksep=1.0;\n\tnodesep=0.5;\n\n", name, name).as_str(),
         );
 
         for (id, block) in self.blocks.iter().enumerate() {
-            dot.push_str(&format!("\tBB{} [label=\"BB{} | {{", id, id));
+            dot.push_str(&format!(
+                "\tBB{}_{} [width=3.0, height=1.0, label=\"BB{} | {{",
+                id, name, id
+            ));
             for (i, instr) in block.instructions.iter().enumerate() {
                 dot.push_str(&format!("{}", instr.borrow()));
 
@@ -97,14 +100,14 @@ impl Body {
                 ControlFlowEdge::Leaf => {}
                 ControlFlowEdge::Fallthrough(next) => {
                     dot.push_str(&format!(
-                        "\tBB{} -> BB{} [label=\"fall-through\", fontsize=10];\n",
-                        id, next.0
+                        "\tBB{}_{} -> BB{}_{} [label=\"fall-through\", fontsize=10];\n",
+                        id, name, next.0, name
                     ));
                 }
                 ControlFlowEdge::Branch(next) => {
                     dot.push_str(&format!(
-                        "\tBB{} -> BB{} [label=\"branch\", fontsize=10];\n",
-                        id, next.0
+                        "\tBB{}_{} -> BB{}_{} [label=\"branch\", fontsize=10];\n",
+                        id, name, next.0, name
                     ));
                 }
             }
@@ -114,16 +117,16 @@ impl Body {
                 let operator = temp.operator();
                 if let Operator::Branch(_, block_index, _) = operator {
                     dot.push_str(&format!(
-                        "\tBB{} -> BB{} [label=\"branch\", fontsize=10];\n",
-                        id, block_index.0
+                        "\tBB{}_{} -> BB{}_{} [label=\"branch\", fontsize=10];\n",
+                        id, name, block_index.0, name
                     ));
                 }
             }
 
             if let Some(dominator) = block.dominator {
                 dot.push_str(&format!(
-                    "\tBB{} -> BB{} [style=dotted, color=blue, fontsize=10, label=\"dom\"];\n",
-                    dominator.0, id
+                    "\tBB{}_{} -> BB{}_{} [style=dotted, color=blue, fontsize=10, label=\"dom\"];\n",
+                    dominator.0, name,  id, name
                 ));
             }
         }
