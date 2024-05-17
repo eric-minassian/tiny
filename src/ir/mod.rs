@@ -101,6 +101,10 @@ impl ConstBlock {
             }
         }
 
+        if self.constants.is_empty() {
+            dot.push_str("empty");
+        }
+
         dot.push_str("}\"];\n}\n");
 
         dot
