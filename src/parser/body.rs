@@ -110,20 +110,17 @@ where
         let mut current_block = vec![];
 
         let mut i = 1;
-        let mut is_let = false;
 
         while let Some(token) = tokens.next() {
             match token {
-                Ok(Token::Let) => {
-                    is_let = true;
-                }
-                Ok(Token::Identifier(id)) => {
-                    if is_let {
+                Ok(Token::Let) => match tokens.next() {
+                    Some(Ok(Token::Identifier(id))) => {
                         current_block.push(id);
                     }
-
-                    is_let = false;
-                }
+                    _ => {
+                        panic!("Expected an identifier");
+                    }
+                },
                 Ok(Token::While | Token::If | Token::Then) => {
                     i += 1;
                 }
@@ -141,7 +138,7 @@ where
                     current_block.clear();
 
                     while let Some(_) = tokens
-                        .next_if(|t| matches!(t, Ok(Token::Fi) | Ok(Token::Od) | Ok(Token::Else)))
+                        .next_if(|t| !matches!(t, Ok(Token::Fi) | Ok(Token::Od) | Ok(Token::Else)))
                     {
                     }
                 }
@@ -154,6 +151,58 @@ where
         identifier_ids.dedup();
 
         identifier_ids
+    }
+
+    fn loop_phi_detect(&self) -> (Vec<IdentifierId>, bool) {
+        let mut tokens = self.tokens.clone();
+        let mut identifier_ids = vec![];
+        let mut current_block = vec![];
+
+        let mut i = 1;
+
+        while let Some(token) = tokens.next() {
+            match token {
+                Ok(Token::Let) => match tokens.next() {
+                    Some(Ok(Token::Identifier(id))) => {
+                        current_block.push(id);
+                    }
+                    _ => {
+                        panic!("Expected an identifier");
+                    }
+                },
+                Ok(Token::While | Token::If) => {
+                    i += 1;
+                }
+                Ok(Token::Od | Token::Fi | Token::Else) => {
+                    i -= 1;
+
+                    identifier_ids.extend(current_block.iter().cloned());
+                    current_block.clear();
+
+                    if i == 0 {
+                        break;
+                    }
+                }
+                Ok(Token::Return) => {
+                    current_block.clear();
+
+                    while let Some(_) = tokens.next_if(|t| {
+                        !matches!(t, Ok(Token::Fi | Token::Od | Token::Else | Token::RBrack))
+                    }) {}
+
+                    if i - 1 == 0 {
+                        return (identifier_ids, true);
+                    }
+                }
+                _ => (),
+            }
+        }
+
+        let mut identifier_ids = identifier_ids.into_iter().collect::<Vec<_>>();
+        identifier_ids.sort();
+        identifier_ids.dedup();
+
+        (identifier_ids, false)
     }
 
     fn stat_sequence(&mut self) -> Result<()> {
@@ -219,6 +268,12 @@ where
         self.next_instr_id += 1;
         self.get_block_mut(self.cur_block).push_instr(end_instr);
 
+        while let Some(_) = self
+            .tokens
+            .next_if(|t| !matches!(t, Ok(Token::Fi | Token::Od | Token::Else | Token::RBrack)))
+        {
+        }
+
         Ok(())
     }
 
@@ -230,7 +285,7 @@ where
             .update_edge(ControlFlowEdge::Fallthrough(join_block));
         self.cur_block = join_block;
 
-        let phis = self.phi_detect();
+        let (phis, phi_return) = self.loop_phi_detect();
         for phi in phis.clone() {
             let id_val = self
                 .get_block_mut(join_block)
@@ -266,17 +321,19 @@ where
 
         let body_block_end = self.cur_block;
 
-        self.get_block_mut(body_block_end)
-            .update_edge(ControlFlowEdge::Branch(join_block));
+        if !phi_return {
+            self.get_block_mut(body_block_end)
+                .update_edge(ControlFlowEdge::Branch(join_block));
 
-        let body_block_end_instr = Rc::new(RefCell::new(Instruction::new(
-            self.next_instr_id,
-            Operator::UnconditionalBranch(join_block),
-            None,
-        )));
-        self.next_instr_id += 1;
-        self.get_block_mut(body_block_end)
-            .push_instr(body_block_end_instr);
+            let body_block_end_instr = Rc::new(RefCell::new(Instruction::new(
+                self.next_instr_id,
+                Operator::UnconditionalBranch(join_block),
+                None,
+            )));
+            self.next_instr_id += 1;
+            self.get_block_mut(body_block_end)
+                .push_instr(body_block_end_instr);
+        }
 
         self.cur_block = join_block;
 
@@ -2269,30 +2326,55 @@ mod tests {
         assert_eq_sorted!(const_body, expected_const_body);
     }
 
-    // @TODO: Parser should remove unreachable blocks
     #[test]
     fn loop_body_return() {
         /*
-        let x <- 1;
+        let x <- call InputNum;
+        let y <- x;
         while x < 3 do
-            return x
+            let y <- y + 1;
+            return x;
+            let x <- x + 3
         od;
+        return 1
         */
         let tokens = [
             Token::Let,
             Token::Identifier(1),
             Token::Assignment,
-            Token::Number(1),
+            Token::Call,
+            Token::PredefinedFunction(PredefinedFunction::InputNum),
+            Token::Semicolon,
+            Token::Let,
+            Token::Identifier(2),
+            Token::Assignment,
+            Token::Identifier(1),
             Token::Semicolon,
             Token::While,
             Token::Identifier(1),
             Token::RelOp(RelOp::Lt),
             Token::Number(3),
             Token::Do,
+            Token::Let,
+            Token::Identifier(2),
+            Token::Assignment,
+            Token::Identifier(2),
+            Token::Add,
+            Token::Number(1),
+            Token::Semicolon,
             Token::Return,
             Token::Identifier(1),
+            Token::Semicolon,
+            Token::Let,
+            Token::Identifier(1),
+            Token::Assignment,
+            Token::Identifier(1),
+            Token::Add,
+            Token::Number(3),
             Token::Od,
             Token::Semicolon,
+            Token::Return,
+            Token::Number(1),
         ];
 
         let mut const_body = ConstBlock::new();
@@ -2303,11 +2385,13 @@ mod tests {
         );
 
         // Block 0
-        let main_block_identifier_map = InheritingHashMap::from_iter([(1, -1)]);
+        let b0_insr_1 = Rc::new(RefCell::new(Instruction::new(1, Operator::Read, None)));
+
+        let main_block_identifier_map = InheritingHashMap::from_iter([(1, 1), (2, 1)]);
         let main_block_dom_instr_map = InheritingHashMap::new();
 
         let main_block = BasicBlock::from(
-            Vec::new(),
+            vec![b0_insr_1],
             main_block_identifier_map,
             ControlFlowEdge::Fallthrough(1.into()),
             None,
@@ -2316,13 +2400,13 @@ mod tests {
 
         // Block 1
         let b1_insr_1 = Rc::new(RefCell::new(Instruction::new(
-            1,
-            Operator::StoredBinaryOp(StoredBinaryOpcode::Cmp, -1, -3),
+            2,
+            Operator::StoredBinaryOp(StoredBinaryOpcode::Cmp, 1, -3),
             None,
         )));
         let b1_insr_2 = Rc::new(RefCell::new(Instruction::new(
-            2,
-            Operator::Branch(BranchOpcode::Ge, 3.into(), 1),
+            3,
+            Operator::Branch(BranchOpcode::Ge, 3.into(), 2),
             None,
         )));
 
@@ -2341,35 +2425,40 @@ mod tests {
         );
 
         // Block 2
-        let b2_insr_1 = Rc::new(RefCell::new(Instruction::new(3, Operator::Ret(-1), None)));
-        let b2_insr_2 = Rc::new(RefCell::new(Instruction::new(4, Operator::End, None)));
-        let b2_insr_3 = Rc::new(RefCell::new(Instruction::new(
-            5,
-            Operator::UnconditionalBranch(1.into()),
+        let b2_insr_1 = Rc::new(RefCell::new(Instruction::new(
+            4,
+            Operator::StoredBinaryOp(StoredBinaryOpcode::Add, 1, -1),
             None,
         )));
+        let b2_insr_2 = Rc::new(RefCell::new(Instruction::new(5, Operator::Ret(1), None)));
+        let b2_insr_3 = Rc::new(RefCell::new(Instruction::new(6, Operator::End, None)));
 
-        let body_block_identifier_map =
+        let mut body_block_identifier_map =
             InheritingHashMap::with_dominator(join_block.get_identifier_map());
-        let body_block_dom_instr_map =
+        body_block_identifier_map.insert(2, 4);
+        let mut body_block_dom_instr_map =
             InheritingHashMap::with_dominator(join_block.get_dom_instr_map());
+        body_block_dom_instr_map.insert(StoredBinaryOpcode::Add, b2_insr_1.clone());
 
         let body_block = BasicBlock::from(
             vec![b2_insr_1, b2_insr_2, b2_insr_3],
             body_block_identifier_map,
-            ControlFlowEdge::Branch(1.into()),
+            ControlFlowEdge::Leaf,
             Some(1.into()),
             body_block_dom_instr_map,
         );
 
         // Block 3
+        let b3_insr_1 = Rc::new(RefCell::new(Instruction::new(7, Operator::Ret(-1), None)));
+        let b3_insr_2 = Rc::new(RefCell::new(Instruction::new(8, Operator::End, None)));
+
         let escape_block_identifier_map =
             InheritingHashMap::with_dominator(join_block.get_identifier_map());
         let escape_block_dom_instr_map =
             InheritingHashMap::with_dominator(join_block.get_dom_instr_map());
 
         let escape_block = BasicBlock::from(
-            Vec::new(),
+            vec![b3_insr_1, b3_insr_2],
             escape_block_identifier_map,
             ControlFlowEdge::Leaf,
             Some(1.into()),
