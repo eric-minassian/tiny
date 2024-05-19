@@ -97,19 +97,20 @@ impl Body {
             dot.push_str("}\"];\n");
 
             match block.edge {
-                ControlFlowEdge::Leaf => {}
-                ControlFlowEdge::Fallthrough(next) => {
+                Some(ControlFlowEdge::Leaf) => {}
+                Some(ControlFlowEdge::Fallthrough(next)) => {
                     dot.push_str(&format!(
                         "\tBB{}_{} -> BB{}_{} [label=\"fall-through\", fontsize=10];\n",
                         id, name, next.0, name
                     ));
                 }
-                ControlFlowEdge::Branch(next) => {
+                Some(ControlFlowEdge::Branch(next)) => {
                     dot.push_str(&format!(
                         "\tBB{}_{} -> BB{}_{} [label=\"branch\", fontsize=10];\n",
                         id, name, next.0, name
                     ));
                 }
+                None => {}
             }
 
             for instr in block.instructions.iter() {
@@ -140,7 +141,7 @@ impl Body {
 pub struct BasicBlock {
     pub instructions: Vec<Rc<RefCell<Instruction>>>,
     identifier_map: InheritingHashMap<IdentifierId, InstructionId>,
-    edge: ControlFlowEdge,
+    edge: Option<ControlFlowEdge>,
     dominator: Option<BlockIndex>,
     dom_instr_map: InheritingHashMap<StoredBinaryOpcode, Rc<RefCell<Instruction>>>,
 }
@@ -150,7 +151,7 @@ impl BasicBlock {
         Self {
             instructions: Vec::new(),
             identifier_map: InheritingHashMap::new(),
-            edge: ControlFlowEdge::Leaf,
+            edge: None,
             dominator: None,
             dom_instr_map: InheritingHashMap::new(),
         }
@@ -159,7 +160,7 @@ impl BasicBlock {
     pub fn from(
         instructions: Vec<Rc<RefCell<Instruction>>>,
         identifier_map: InheritingHashMap<IdentifierId, InstructionId>,
-        edge: ControlFlowEdge,
+        edge: Option<ControlFlowEdge>,
         dominator: Option<BlockIndex>,
         dom_instr_map: InheritingHashMap<StoredBinaryOpcode, Rc<RefCell<Instruction>>>,
     ) -> Self {
@@ -199,8 +200,14 @@ impl BasicBlock {
         self.dominator = Some(dom);
     }
 
-    pub fn update_edge(&mut self, edge: ControlFlowEdge) {
-        self.edge = edge;
+    pub fn get_edge(&self) -> Option<&ControlFlowEdge> {
+        self.edge.as_ref()
+    }
+
+    pub fn set_edge(&mut self, edge: ControlFlowEdge) {
+        if self.edge.is_none() {
+            self.edge = Some(edge);
+        }
     }
 
     pub fn get_identifier_map(&self) -> &InheritingHashMap<IdentifierId, InstructionId> {

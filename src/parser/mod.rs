@@ -530,7 +530,8 @@ mod tests {
             IrStore::new(),
         );
 
-        assert!(parser.computation().is_ok());
+        parser.computation().unwrap();
+        // assert!(parser.computation().is_ok());
         assert!(parser.store.get_body("main").is_some());
     }
 }
