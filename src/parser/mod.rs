@@ -1,6 +1,6 @@
 mod body;
 
-use std::iter::Peekable;
+use std::{collections::HashSet, iter::Peekable};
 
 use crate::{
     error::{Error, Result},
@@ -62,9 +62,9 @@ where
     fn computation(&mut self) -> Result<()> {
         self.match_token(Token::Main)?;
 
-        let _var_decl = match self.tokens.peek() {
+        let var_decl = match self.tokens.peek() {
             Some(Ok(Token::Var)) => self.var_decl()?,
-            _ => vec![],
+            _ => HashSet::new(),
         };
 
         while let Some(Ok(Token::Void | Token::Function)) = self.tokens.peek() {
@@ -73,7 +73,8 @@ where
 
         self.match_token(Token::LBrack)?;
 
-        let main_body = BodyParser::parse_main(&mut self.tokens, &mut self.store.const_block);
+        let main_body =
+            BodyParser::parse_main(&mut self.tokens, &mut self.store.const_block, var_decl);
 
         self.store.insert_body("main".to_string(), main_body);
 
@@ -84,16 +85,21 @@ where
     }
 
     fn func_body(&mut self, params: Vec<IdentifierId>) -> Result<Body> {
-        let _var_decl = match self.tokens.peek() {
+        let var_decl = match self.tokens.peek() {
             Some(Ok(Token::Var)) => self.var_decl()?,
-            _ => vec![],
+            _ => HashSet::new(),
         };
 
         self.match_token(Token::LBrack)?;
 
         let body = match self.tokens.peek() {
             Some(Ok(Token::Let | Token::Call | Token::If | Token::While | Token::Return)) => {
-                BodyParser::parse_func(&mut self.tokens, &mut self.store.const_block, params)
+                BodyParser::parse_func(
+                    &mut self.tokens,
+                    &mut self.store.const_block,
+                    var_decl,
+                    params,
+                )
             }
             _ => Body::new(),
         };
@@ -152,17 +158,19 @@ where
         Ok(())
     }
 
-    fn var_decl(&mut self) -> Result<Vec<IdentifierId>> {
+    fn var_decl(&mut self) -> Result<HashSet<IdentifierId>> {
         self.match_token(Token::Var)?;
 
-        let mut ids = vec![match self.tokens.next() {
-            Some(Ok(Token::Identifier(id))) => id,
+        let mut ids = HashSet::new();
+
+        match self.tokens.next() {
+            Some(Ok(Token::Identifier(id))) => ids.insert(id),
             _ => return Err(Error::SyntaxError("Expected identifier".to_string())),
-        }];
+        };
 
         while let Some(Ok(Token::Comma)) = self.tokens.peek() {
             self.tokens.next();
-            ids.push(match self.tokens.next() {
+            ids.insert(match self.tokens.next() {
                 Some(Ok(Token::Identifier(id))) => id,
                 _ => return Err(Error::SyntaxError("Expected identifier".to_string())),
             });
@@ -189,7 +197,7 @@ mod tests {
             IrStore::new(),
         );
 
-        assert_eq!(parser.var_decl().unwrap(), vec![0]);
+        assert_eq!(parser.var_decl().unwrap(), HashSet::from_iter([0]));
     }
 
     #[test]
@@ -209,7 +217,7 @@ mod tests {
             IrStore::new(),
         );
 
-        assert_eq!(parser.var_decl().unwrap(), vec![0, 1, 4]);
+        assert_eq!(parser.var_decl().unwrap(), HashSet::from_iter([0, 1, 4]));
     }
 
     #[test]
