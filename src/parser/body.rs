@@ -23,14 +23,19 @@ where
     cur_block: BlockIndex,
     next_instr_id: InstructionId,
     is_main: bool,
+    declared_identifiers: HashSet<IdentifierId>,
 }
 
 impl<'a, T> BodyParser<'a, T>
 where
     T: Iterator<Item = Result<Token>> + Clone,
 {
-    pub fn parse_main(tokens: &'a mut Peekable<T>, const_body: &'a mut ConstBlock) -> Body {
-        let mut body_parser = Self::new(tokens, const_body, true);
+    pub fn parse_main(
+        tokens: &'a mut Peekable<T>,
+        const_body: &'a mut ConstBlock,
+        declared_identifiers: HashSet<IdentifierId>,
+    ) -> Body {
+        let mut body_parser = Self::new(tokens, const_body, declared_identifiers, true);
 
         body_parser.stat_sequence().unwrap();
         body_parser.push_end_instr();
@@ -41,9 +46,10 @@ where
     pub fn parse_func(
         tokens: &'a mut Peekable<T>,
         const_body: &'a mut ConstBlock,
+        declared_identifiers: HashSet<IdentifierId>,
         params: Vec<IdentifierId>,
     ) -> Body {
-        let mut body_parser = Self::new(tokens, const_body, false);
+        let mut body_parser = Self::new(tokens, const_body, declared_identifiers, false);
         body_parser.parse_func_params(params);
         body_parser.stat_sequence().unwrap();
         body_parser.push_end_instr();
@@ -51,7 +57,12 @@ where
         body_parser.body
     }
 
-    fn new(tokens: &'a mut Peekable<T>, const_body: &'a mut ConstBlock, is_main: bool) -> Self {
+    fn new(
+        tokens: &'a mut Peekable<T>,
+        const_body: &'a mut ConstBlock,
+        declared_identifiers: HashSet<IdentifierId>,
+        is_main: bool,
+    ) -> Self {
         let mut body = Body::new();
         let cur_block = body.insert_block(BasicBlock::new());
         body.set_root(cur_block);
@@ -63,6 +74,7 @@ where
             body,
             next_instr_id: 1,
             is_main,
+            declared_identifiers,
         }
     }
 
@@ -460,13 +472,6 @@ where
                 ControlFlowEdge::Fallthrough(join_block)
             });
 
-        if branch_block == 0.into() {
-            println!(
-                "Branch Block: {:?}, Then End Block: {:?}, Else End Block: {:?}, Join Block: {:?}",
-                branch_block, then_block_end, else_block_end, join_block
-            );
-        }
-
         self.get_block_mut(branch_block)
             .push_instr(Rc::new(RefCell::new(Instruction::new(
                 branch_instruction_id,
@@ -643,6 +648,15 @@ where
             Token::Identifier(identifier_id) => {
                 self.match_token(Token::Assignment)?;
 
+                if !self.declared_identifiers.contains(&identifier_id) {
+                    eprintln!(
+                        "\x1b[93mWarning: Identifier Not Declared In Function Header {:?}.\x1b[0m",
+                        identifier_id
+                    );
+
+                    self.declared_identifiers.insert(identifier_id.clone());
+                }
+
                 let instruction_id = self.expression()?;
 
                 self.get_block_mut(self.cur_block)
@@ -758,13 +772,32 @@ where
             .ok_or_else(|| Error::UnexpectedEndOfFile)?
         {
             Ok(Token::Identifier(id)) => {
+                let identifier_id = id.clone();
+
+                if !self.declared_identifiers.contains(&identifier_id) {
+                    eprintln!(
+                        "\x1b[93mWarning: Identifier Not Declared In Function Header {:?}.\x1b[0m",
+                        identifier_id
+                    );
+
+                    self.declared_identifiers.insert(identifier_id);
+                }
+
                 let instruction_id = self
-                    .body
-                    .get_mut_block(self.cur_block)
-                    .unwrap()
-                    .get_identifier(id)
-                    .unwrap()
-                    .clone();
+                    .get_block_mut(self.cur_block)
+                    .get_identifier(&identifier_id)
+                    .unwrap_or_else(|| {
+                        eprintln!(
+                        "\x1b[93mWarning: Uninitialized Identifier {:?}. Initializing to 0.\x1b[0m",
+                        identifier_id
+                    );
+                        let instruction_id = self.const_body.insert_returning_id(0);
+                        self.get_block_mut(self.cur_block)
+                            .insert_identifier(identifier_id, instruction_id);
+
+                        instruction_id
+                    });
+
                 self.tokens.next();
 
                 Ok(instruction_id)
@@ -862,7 +895,11 @@ mod tests {
         ];
         let mut const_body = ConstBlock::new();
 
-        let body = BodyParser::parse_main(&mut tokens.into_iter().peekable(), &mut const_body);
+        let body = BodyParser::parse_main(
+            &mut tokens.into_iter().peekable(),
+            &mut const_body,
+            HashSet::new(),
+        );
 
         // Block 0
         let b0_insr_1 = Rc::new(RefCell::new(Instruction::new(
@@ -966,6 +1003,7 @@ mod tests {
         let body = BodyParser::parse_main(
             &mut tokens.map(|t| Ok(t)).into_iter().peekable(),
             &mut const_body,
+            HashSet::new(),
         );
 
         let b0_insr_1 = Rc::new(RefCell::new(Instruction::new(
@@ -1037,6 +1075,7 @@ mod tests {
         let body = BodyParser::parse_main(
             &mut tokens.map(|t| Ok(t)).into_iter().peekable(),
             &mut const_body,
+            HashSet::new(),
         );
 
         let b0_insr_1 = Rc::new(RefCell::new(Instruction::new(
@@ -1117,6 +1156,7 @@ mod tests {
         let body = BodyParser::parse_main(
             &mut tokens.map(|t| Ok(t)).into_iter().peekable(),
             &mut const_body,
+            HashSet::new(),
         );
 
         // Block 0
@@ -1267,6 +1307,7 @@ mod tests {
         let body = BodyParser::parse_main(
             &mut tokens.map(|t| Ok(t)).into_iter().peekable(),
             &mut const_body,
+            HashSet::new(),
         );
 
         // Block 0
@@ -1420,6 +1461,7 @@ mod tests {
         let body = BodyParser::parse_main(
             &mut tokens.map(|t| Ok(t)).into_iter().peekable(),
             &mut const_body,
+            HashSet::new(),
         );
 
         // Block 0
@@ -1554,6 +1596,7 @@ mod tests {
         let body = BodyParser::parse_main(
             &mut tokens.map(|t| Ok(t)).into_iter().peekable(),
             &mut const_body,
+            HashSet::new(),
         );
 
         // Block 0
@@ -1687,6 +1730,7 @@ mod tests {
         let body = BodyParser::parse_main(
             &mut tokens.map(|t| Ok(t)).into_iter().peekable(),
             &mut const_body,
+            HashSet::new(),
         );
 
         // Block 0
@@ -1904,6 +1948,7 @@ mod tests {
         let body = BodyParser::parse_main(
             &mut tokens.map(|t| Ok(t)).into_iter().peekable(),
             &mut const_body,
+            HashSet::new(),
         );
 
         // Block 0
@@ -2102,6 +2147,7 @@ mod tests {
         let body = BodyParser::parse_main(
             &mut tokens.map(|t| Ok(t)).into_iter().peekable(),
             &mut const_body,
+            HashSet::new(),
         );
 
         // Block 0
@@ -2365,6 +2411,7 @@ mod tests {
         let body = BodyParser::parse_func(
             &mut tokens.map(|t| Ok(t)).into_iter().peekable(),
             &mut const_body,
+            HashSet::new(),
             vec![],
         );
 
@@ -2406,6 +2453,7 @@ mod tests {
         let body = BodyParser::parse_main(
             &mut tokens.map(|t| Ok(t)).into_iter().peekable(),
             &mut const_body,
+            HashSet::new(),
         );
 
         // Block 0
@@ -2486,6 +2534,7 @@ mod tests {
         let body = BodyParser::parse_func(
             &mut tokens.map(|t| Ok(t)).into_iter().peekable(),
             &mut const_body,
+            HashSet::new(),
             vec![],
         );
 
@@ -2640,6 +2689,7 @@ mod tests {
         let body = BodyParser::parse_func(
             &mut tokens.map(|t| Ok(t)).into_iter().peekable(),
             &mut const_body,
+            HashSet::new(),
             vec![],
         );
 
@@ -2814,6 +2864,7 @@ mod tests {
         let body = BodyParser::parse_func(
             &mut tokens.map(|t| Ok(t)).into_iter().peekable(),
             &mut const_body,
+            HashSet::new(),
             vec![],
         );
 
@@ -2994,6 +3045,7 @@ mod tests {
         let body = BodyParser::parse_func(
             &mut tokens.map(|t| Ok(t)).into_iter().peekable(),
             &mut const_body,
+            HashSet::new(),
             vec![],
         );
 
@@ -3276,6 +3328,7 @@ mod tests {
         let body = BodyParser::parse_main(
             &mut tokens.map(|t| Ok(t)).into_iter().peekable(),
             &mut const_body,
+            HashSet::new(),
         );
 
         // Block 0
@@ -3374,6 +3427,7 @@ mod tests {
         let body = BodyParser::parse_main(
             &mut tokens.map(|t| Ok(t)).into_iter().peekable(),
             &mut const_body,
+            HashSet::new(),
         );
 
         // Block 0
@@ -3502,6 +3556,7 @@ mod tests {
         let body = BodyParser::parse_main(
             &mut tokens.map(|t| Ok(t)).into_iter().peekable(),
             &mut const_body,
+            HashSet::new(),
         );
 
         // Block 0
@@ -3574,6 +3629,7 @@ mod tests {
         let body = BodyParser::parse_func(
             &mut tokens.map(|t| Ok(t)).into_iter().peekable(),
             &mut const_body,
+            HashSet::new(),
             vec![1],
         );
 
@@ -3632,6 +3688,7 @@ mod tests {
         let body = BodyParser::parse_func(
             &mut tokens.map(|t| Ok(t)).into_iter().peekable(),
             &mut const_body,
+            HashSet::new(),
             vec![1],
         );
 
@@ -3662,6 +3719,57 @@ mod tests {
 
         let expected_body = Body::from(Some(0.into()), vec![func_block]);
         let expected_const_body = ConstBlock::from(HashSet::from([1]));
+
+        assert_eq_sorted!(body, expected_body);
+        assert_eq_sorted!(const_body, expected_const_body);
+    }
+
+    #[test]
+    fn undeclared_identifier() {
+        /*
+        let x <- y + 1;
+        */
+
+        let tokens = [
+            Token::Let,
+            Token::Identifier(1),
+            Token::Assignment,
+            Token::Identifier(2),
+            Token::Add,
+            Token::Number(1),
+            Token::Semicolon,
+        ];
+
+        let mut const_body = ConstBlock::new();
+
+        let body = BodyParser::parse_main(
+            &mut tokens.map(|t| Ok(t)).into_iter().peekable(),
+            &mut const_body,
+            HashSet::new(),
+        );
+
+        // Block 0
+        let b0_insr_1 = Rc::new(RefCell::new(Instruction::new(
+            1,
+            Operator::StoredBinaryOp(StoredBinaryOpcode::Add, 0, -1),
+            None,
+        )));
+        let b0_insr_2 = Rc::new(RefCell::new(Instruction::new(2, Operator::End, None)));
+
+        let main_block_identifier_map = InheritingHashMap::from_iter([(1, 1), (2, 0)]);
+        let main_block_dom_instr_map =
+            InheritingHashMap::from_iter([(StoredBinaryOpcode::Add, b0_insr_1.clone())]);
+
+        let main_block = BasicBlock::from(
+            vec![b0_insr_1, b0_insr_2],
+            main_block_identifier_map,
+            Some(ControlFlowEdge::Leaf),
+            None,
+            main_block_dom_instr_map,
+        );
+
+        let expected_body = Body::from(Some(0.into()), vec![main_block]);
+        let expected_const_body = ConstBlock::from(HashSet::from([0, 1]));
 
         assert_eq_sorted!(body, expected_body);
         assert_eq_sorted!(const_body, expected_const_body);
