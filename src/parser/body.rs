@@ -472,13 +472,6 @@ where
                 ControlFlowEdge::Fallthrough(join_block)
             });
 
-        if branch_block == 0.into() {
-            println!(
-                "Branch Block: {:?}, Then End Block: {:?}, Else End Block: {:?}, Join Block: {:?}",
-                branch_block, then_block_end, else_block_end, join_block
-            );
-        }
-
         self.get_block_mut(branch_block)
             .push_instr(Rc::new(RefCell::new(Instruction::new(
                 branch_instruction_id,
