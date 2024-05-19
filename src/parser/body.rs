@@ -79,7 +79,7 @@ where
             } else {
                 let return_instr = Rc::new(RefCell::new(Instruction::new(
                     self.next_instr_id,
-                    Operator::Ret(self.const_body.insert_returning_id(0)),
+                    Operator::Ret(None),
                     None,
                 )));
                 self.next_instr_id += 1;
@@ -229,7 +229,7 @@ where
     fn return_statement(&mut self) -> Result<()> {
         self.match_token(Token::Return)?;
 
-        let result_id = self.expression().unwrap_or(0);
+        let result_id = self.expression().ok();
 
         if self.is_main {
             let end_instr = Rc::new(RefCell::new(Instruction::new(
@@ -2329,7 +2329,11 @@ mod tests {
         );
 
         // Block 0
-        let b0_insr_1 = Rc::new(RefCell::new(Instruction::new(1, Operator::Ret(-1), None)));
+        let b0_insr_1 = Rc::new(RefCell::new(Instruction::new(
+            1,
+            Operator::Ret(Some(-1)),
+            None,
+        )));
 
         let main_block_identifier_map = InheritingHashMap::from_iter([(1, -1)]);
         let main_block_dom_instr_map = InheritingHashMap::new();
@@ -2491,7 +2495,11 @@ mod tests {
             Operator::StoredBinaryOp(StoredBinaryOpcode::Add, 1, -1),
             None,
         )));
-        let b2_insr_2 = Rc::new(RefCell::new(Instruction::new(5, Operator::Ret(1), None)));
+        let b2_insr_2 = Rc::new(RefCell::new(Instruction::new(
+            5,
+            Operator::Ret(Some(1)),
+            None,
+        )));
 
         let mut body_block_identifier_map =
             InheritingHashMap::with_dominator(join_block.get_identifier_map());
@@ -2509,7 +2517,11 @@ mod tests {
         );
 
         // Block 3
-        let b3_insr_1 = Rc::new(RefCell::new(Instruction::new(6, Operator::Ret(-1), None)));
+        let b3_insr_1 = Rc::new(RefCell::new(Instruction::new(
+            6,
+            Operator::Ret(Some(-1)),
+            None,
+        )));
 
         let escape_block_identifier_map =
             InheritingHashMap::with_dominator(join_block.get_identifier_map());
@@ -2622,7 +2634,11 @@ mod tests {
             Operator::StoredBinaryOp(StoredBinaryOpcode::Add, 1, -1),
             None,
         )));
-        let b1_insr_2 = Rc::new(RefCell::new(Instruction::new(5, Operator::Ret(4), None)));
+        let b1_insr_2 = Rc::new(RefCell::new(Instruction::new(
+            5,
+            Operator::Ret(Some(4)),
+            None,
+        )));
 
         let mut then_block_identifier_map =
             InheritingHashMap::with_dominator(branch_block.get_identifier_map());
@@ -2663,7 +2679,11 @@ mod tests {
 
         // Block 3
         let b3_insr_1 = Rc::new(RefCell::new(Instruction::new(7, Operator::Phi(1, 6), None)));
-        let b3_insr_2 = Rc::new(RefCell::new(Instruction::new(8, Operator::Ret(-1), None)));
+        let b3_insr_2 = Rc::new(RefCell::new(Instruction::new(
+            8,
+            Operator::Ret(Some(-1)),
+            None,
+        )));
 
         let mut join_block_identifier_map =
             InheritingHashMap::with_dominator(branch_block.get_identifier_map());
@@ -2788,7 +2808,11 @@ mod tests {
             Operator::StoredBinaryOp(StoredBinaryOpcode::Add, 1, -1),
             None,
         )));
-        let b1_insr_2 = Rc::new(RefCell::new(Instruction::new(5, Operator::Ret(4), None)));
+        let b1_insr_2 = Rc::new(RefCell::new(Instruction::new(
+            5,
+            Operator::Ret(Some(4)),
+            None,
+        )));
 
         let mut then_block_identifier_map =
             InheritingHashMap::with_dominator(branch_block.get_identifier_map());
@@ -2811,7 +2835,11 @@ mod tests {
             Operator::StoredBinaryOp(StoredBinaryOpcode::Add, 1, -1),
             None,
         )));
-        let b2_insr_2 = Rc::new(RefCell::new(Instruction::new(7, Operator::Ret(6), None)));
+        let b2_insr_2 = Rc::new(RefCell::new(Instruction::new(
+            7,
+            Operator::Ret(Some(6)),
+            None,
+        )));
 
         let mut else_block_identifier_map =
             InheritingHashMap::with_dominator(branch_block.get_identifier_map());
@@ -2987,7 +3015,11 @@ mod tests {
             Operator::StoredBinaryOp(StoredBinaryOpcode::Add, 1, -1),
             None,
         )));
-        let b2_insr_2 = Rc::new(RefCell::new(Instruction::new(7, Operator::Ret(6), None)));
+        let b2_insr_2 = Rc::new(RefCell::new(Instruction::new(
+            7,
+            Operator::Ret(Some(6)),
+            None,
+        )));
 
         let mut then_then_block_identifier_map =
             InheritingHashMap::with_dominator(then_block.get_identifier_map());
@@ -3005,7 +3037,11 @@ mod tests {
         );
 
         // Block 3
-        let b3_insr_1 = Rc::new(RefCell::new(Instruction::new(8, Operator::Ret(-1), None)));
+        let b3_insr_1 = Rc::new(RefCell::new(Instruction::new(
+            8,
+            Operator::Ret(Some(-1)),
+            None,
+        )));
 
         let then_else_block_identifier_map =
             InheritingHashMap::with_dominator(then_block.get_identifier_map());
@@ -3047,7 +3083,11 @@ mod tests {
         );
 
         // Block 5
-        let b5_insr_1 = Rc::new(RefCell::new(Instruction::new(11, Operator::Ret(1), None)));
+        let b5_insr_1 = Rc::new(RefCell::new(Instruction::new(
+            11,
+            Operator::Ret(Some(1)),
+            None,
+        )));
 
         let else_then_block_identifier_map =
             InheritingHashMap::with_dominator(else_block.get_identifier_map());
@@ -3111,7 +3151,11 @@ mod tests {
             Operator::Phi(1, 13),
             None,
         )));
-        let b8_insr_2 = Rc::new(RefCell::new(Instruction::new(15, Operator::Ret(14), None)));
+        let b8_insr_2 = Rc::new(RefCell::new(Instruction::new(
+            15,
+            Operator::Ret(Some(14)),
+            None,
+        )));
 
         let mut join_block_identifier_map =
             InheritingHashMap::with_dominator(branch_block.get_identifier_map());
@@ -3465,6 +3509,120 @@ mod tests {
 
         let expected_body = Body::from(Some(0.into()), vec![main_block]);
         let expected_const_body = ConstBlock::from(HashSet::new());
+
+        assert_eq_sorted!(body, expected_body);
+        assert_eq_sorted!(const_body, expected_const_body);
+    }
+
+    #[test]
+    fn void_func_without_return() {
+        /*
+        let x <- x + 1;
+        */
+
+        let tokens = [
+            Token::Let,
+            Token::Identifier(1),
+            Token::Assignment,
+            Token::Identifier(1),
+            Token::Add,
+            Token::Number(1),
+            Token::Semicolon,
+        ];
+
+        let mut const_body = ConstBlock::new();
+
+        let body = BodyParser::parse_func(
+            &mut tokens.map(|t| Ok(t)).into_iter().peekable(),
+            &mut const_body,
+            vec![1],
+        );
+
+        // Block 0
+        let b0_insr_1 = Rc::new(RefCell::new(Instruction::new(
+            1,
+            Operator::GetPar { idx: 1 },
+            None,
+        )));
+        let b0_insr_2 = Rc::new(RefCell::new(Instruction::new(
+            2,
+            Operator::StoredBinaryOp(StoredBinaryOpcode::Add, 1, -1),
+            None,
+        )));
+        let b0_insr_3 = Rc::new(RefCell::new(Instruction::new(3, Operator::Ret(None), None)));
+
+        let func_block_identifier_map = InheritingHashMap::from_iter([(1, 2)]);
+        let func_block_dom_instr_map =
+            InheritingHashMap::from_iter([(StoredBinaryOpcode::Add, b0_insr_2.clone())]);
+
+        let func_block = BasicBlock::from(
+            vec![b0_insr_1, b0_insr_2, b0_insr_3],
+            func_block_identifier_map,
+            Some(ControlFlowEdge::Leaf),
+            None,
+            func_block_dom_instr_map,
+        );
+
+        let expected_body = Body::from(Some(0.into()), vec![func_block]);
+        let expected_const_body = ConstBlock::from(HashSet::from([1]));
+
+        assert_eq_sorted!(body, expected_body);
+        assert_eq_sorted!(const_body, expected_const_body);
+    }
+
+    #[test]
+    fn void_func_with_return() {
+        /*
+        let x <- x + 1;
+        return
+        */
+
+        let tokens = [
+            Token::Let,
+            Token::Identifier(1),
+            Token::Assignment,
+            Token::Identifier(1),
+            Token::Add,
+            Token::Number(1),
+            Token::Semicolon,
+            Token::Return,
+        ];
+
+        let mut const_body = ConstBlock::new();
+
+        let body = BodyParser::parse_func(
+            &mut tokens.map(|t| Ok(t)).into_iter().peekable(),
+            &mut const_body,
+            vec![1],
+        );
+
+        // Block 0
+        let b0_insr_1 = Rc::new(RefCell::new(Instruction::new(
+            1,
+            Operator::GetPar { idx: 1 },
+            None,
+        )));
+        let b0_insr_2 = Rc::new(RefCell::new(Instruction::new(
+            2,
+            Operator::StoredBinaryOp(StoredBinaryOpcode::Add, 1, -1),
+            None,
+        )));
+        let b0_insr_3 = Rc::new(RefCell::new(Instruction::new(3, Operator::Ret(None), None)));
+
+        let func_block_identifier_map = InheritingHashMap::from_iter([(1, 2)]);
+        let func_block_dom_instr_map =
+            InheritingHashMap::from_iter([(StoredBinaryOpcode::Add, b0_insr_2.clone())]);
+
+        let func_block = BasicBlock::from(
+            vec![b0_insr_1, b0_insr_2, b0_insr_3],
+            func_block_identifier_map,
+            Some(ControlFlowEdge::Leaf),
+            None,
+            func_block_dom_instr_map,
+        );
+
+        let expected_body = Body::from(Some(0.into()), vec![func_block]);
+        let expected_const_body = ConstBlock::from(HashSet::from([1]));
 
         assert_eq_sorted!(body, expected_body);
         assert_eq_sorted!(const_body, expected_const_body);

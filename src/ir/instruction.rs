@@ -140,7 +140,7 @@ pub enum Operator {
     StoredBinaryOp(StoredBinaryOpcode, InstructionId, InstructionId),
     Phi(InstructionId, InstructionId),
     End,
-    Ret(InstructionId),
+    Ret(Option<InstructionId>), // Void functions return None
     Read,
     Write(InstructionId),
     WriteNL,
@@ -204,7 +204,10 @@ impl std::fmt::Display for Operator {
                 write!(f, "{:} {} {}", op, lhs, rhs)
             }
             Operator::End => write!(f, "end"),
-            Operator::Ret(val) => write!(f, "ret {}", val),
+            Operator::Ret(val) => match val {
+                Some(val) => write!(f, "ret {}", val),
+                None => write!(f, "ret void"),
+            },
             Operator::Read => write!(f, "read"),
             Operator::Write(val) => write!(f, "write {}", val),
             Operator::WriteNL => write!(f, "writeNL"),
