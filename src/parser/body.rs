@@ -2950,9 +2950,9 @@ mod tests {
             Token::Add,
             Token::Number(1),
             Token::Semicolon,
-            Token::Return,        //
-            Token::Identifier(1), // @TODO: Removing this should not change the result
-            Token::Semicolon,     //
+            Token::Return,
+            Token::Identifier(1),
+            Token::Semicolon,
             Token::Else,
             Token::Return,
             Token::Number(1),
