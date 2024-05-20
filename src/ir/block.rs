@@ -146,8 +146,8 @@ pub struct BasicBlock {
     dom_instr_map: InheritingHashMap<StoredBinaryOpcode, Rc<RefCell<Instruction>>>,
 }
 
-impl BasicBlock {
-    pub fn new() -> Self {
+impl Default for BasicBlock {
+    fn default() -> Self {
         Self {
             instructions: Vec::new(),
             identifier_map: InheritingHashMap::new(),
@@ -155,6 +155,12 @@ impl BasicBlock {
             dominator: None,
             dom_instr_map: InheritingHashMap::new(),
         }
+    }
+}
+
+impl BasicBlock {
+    pub fn new() -> Self {
+        Self::default()
     }
 
     pub fn from(

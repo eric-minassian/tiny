@@ -158,6 +158,7 @@ where
             ident,
             params,
             body,
+            name: ident.to_string(), // @TODO: Call tokenizer to get the name
         })
     }
 

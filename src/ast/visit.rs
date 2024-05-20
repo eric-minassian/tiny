@@ -644,6 +644,7 @@ mod tests {
     #[test]
     fn visit_func_decl() {
         let func_decl = FuncDecl {
+            name: "test".to_string(),
             is_void: false,
             params: FormalParam { params: vec![] },
             ident: 1,
@@ -720,6 +721,7 @@ mod tests {
         let computation = Computation {
             vars: None,
             funcs: vec![FuncDecl {
+                name: "test".to_string(),
                 is_void: false,
                 params: FormalParam { params: vec![] },
                 ident: 1,

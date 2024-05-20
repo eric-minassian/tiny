@@ -23,6 +23,7 @@ pub struct FormalParam {
 
 #[cfg_attr(test, derive(Debug, PartialEq))]
 pub struct FuncDecl {
+    pub name: String,
     pub is_void: bool,
     pub ident: Identifier,
     pub params: FormalParam,
