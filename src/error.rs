@@ -1,17 +1,8 @@
-use crate::lexer::{IdentifierId, Token, TokenType};
-
-#[derive(Debug, Clone, PartialEq)]
-pub enum ExpectedTokens {
-    Single(TokenType),
-    OneOf(Vec<TokenType>),
-}
+use crate::lexer::Identifier;
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum Error {
-    UnexpectedToken {
-        expected: ExpectedTokens,
-        found: Token,
-    },
+    UnexpectedToken,
     UnexpectedEndOfFile,
 
     // General error during development
@@ -23,22 +14,9 @@ pub type Result<T> = std::result::Result<T, Error>;
 impl std::fmt::Display for Error {
     fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
         match self {
-            Error::UnexpectedToken { expected, found } => match expected {
-                ExpectedTokens::Single(expected_token) => {
-                    write!(
-                        f,
-                        "Unexpected token: expected {:?}, found {:?}",
-                        expected_token, found
-                    )
-                }
-                ExpectedTokens::OneOf(expected_tokens) => {
-                    write!(
-                        f,
-                        "Unexpected token: expected one of {:?}, found {:?}",
-                        expected_tokens, found
-                    )
-                }
-            },
+            Error::UnexpectedToken => {
+                write!(f, "Unexpected token")
+            }
             Error::UnexpectedEndOfFile => {
                 write!(f, "Unexpected end of file")
             }
@@ -51,8 +29,8 @@ impl std::fmt::Display for Error {
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum Warning {
-    UninitializedIdentifier(IdentifierId),
-    UndeclaredIdentifier(IdentifierId),
+    UninitializedIdentifier(Identifier),
+    UndeclaredIdentifier(Identifier),
 }
 
 impl std::fmt::Display for Warning {

@@ -5,7 +5,7 @@ use crate::{
         Assignment, Block, Computation, Expression, Factor, FormalParam, FuncBody, FuncCall,
         FuncDecl, IfStatement, Relation, ReturnStatement, Statement, Term, VarDecl, WhileStatement,
     },
-    lexer::TokenResult,
+    lexer::error::TokenResult,
 };
 
 pub type ParserResult<T> = Result<T, ()>;

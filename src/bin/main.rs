@@ -13,15 +13,15 @@ fn main() {
         process::exit(1);
     });
 
-    let ir = Parser::parse(Tokenizer::new(&file));
+    // let ir = Parser::parse(Tokenizer::new(&file));
 
-    match ir {
-        Ok(ir_store) => {
-            print!("{}", ir_store.dot());
-        }
-        Err(e) => {
-            eprintln!("{}", e);
-            process::exit(1);
-        }
-    }
+    // match ir {
+    //     Ok(ir_store) => {
+    //         print!("{}", ir_store.dot());
+    //     }
+    //     Err(e) => {
+    //         eprintln!("{}", e);
+    //         process::exit(1);
+    //     }
+    // }
 }

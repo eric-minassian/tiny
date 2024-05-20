@@ -3,9 +3,9 @@ mod body;
 use std::{collections::HashSet, iter::Peekable};
 
 use crate::{
-    error::{Error, ExpectedTokens, Result},
+    error::{Error, Result},
     ir::{block::Body, IrStore},
-    lexer::{IdentifierId, Token, TokenType},
+    lexer::{Identifier, Token},
 };
 
 use self::body::BodyParser;
@@ -17,10 +17,7 @@ where
     let next_token = tokens.next().ok_or(Error::UnexpectedEndOfFile)??;
 
     if next_token != expected {
-        return Err(Error::UnexpectedToken {
-            expected: ExpectedTokens::Single(expected.into()),
-            found: next_token,
-        });
+        return Err(Error::UnexpectedToken);
     }
 
     Ok(())
@@ -84,7 +81,7 @@ where
         Ok(())
     }
 
-    fn func_body(&mut self, params: Vec<IdentifierId>) -> Result<Body> {
+    fn func_body(&mut self, params: Vec<Identifier>) -> Result<Body> {
         let var_decl = match self.tokens.peek() {
             Some(Ok(Token::Var)) => self.var_decl()?,
             _ => HashSet::new(),
@@ -109,7 +106,7 @@ where
         Ok(body)
     }
 
-    fn formal_param(&mut self) -> Result<Vec<IdentifierId>> {
+    fn formal_param(&mut self) -> Result<Vec<Identifier>> {
         self.match_token(Token::LPar)?;
 
         if let Some(Ok(Token::RPar)) = self.tokens.peek() {
@@ -120,12 +117,7 @@ where
         let mut ids = vec![
             match self.tokens.next().ok_or(Error::UnexpectedEndOfFile)? {
                 Ok(Token::Identifier(id)) => id,
-                Ok(token) => {
-                    return Err(Error::UnexpectedToken {
-                        expected: ExpectedTokens::Single(TokenType::Identifier),
-                        found: token,
-                    })
-                }
+                Ok(token) => return Err(Error::UnexpectedToken),
                 Err(err) => return Err(err),
             },
         ];
@@ -135,12 +127,7 @@ where
             ids.push(
                 match self.tokens.next().ok_or(Error::UnexpectedEndOfFile)? {
                     Ok(Token::Identifier(id)) => id,
-                    Ok(token) => {
-                        return Err(Error::UnexpectedToken {
-                            expected: ExpectedTokens::Single(TokenType::Identifier),
-                            found: token,
-                        })
-                    }
+                    Ok(token) => return Err(Error::UnexpectedToken),
                     Err(err) => return Err(err),
                 },
             );
@@ -158,12 +145,7 @@ where
 
         let id = match self.tokens.next().ok_or(Error::UnexpectedEndOfFile)? {
             Ok(Token::Identifier(id)) => id,
-            Ok(token) => {
-                return Err(Error::UnexpectedToken {
-                    expected: ExpectedTokens::Single(TokenType::Identifier),
-                    found: token,
-                })
-            }
+            Ok(token) => return Err(Error::UnexpectedToken),
             Err(err) => return Err(err),
         };
 
@@ -180,19 +162,14 @@ where
         Ok(())
     }
 
-    fn var_decl(&mut self) -> Result<HashSet<IdentifierId>> {
+    fn var_decl(&mut self) -> Result<HashSet<Identifier>> {
         self.match_token(Token::Var)?;
 
         let mut ids = HashSet::new();
 
         match self.tokens.next().ok_or(Error::UnexpectedEndOfFile)? {
             Ok(Token::Identifier(id)) => ids.insert(id),
-            Ok(token) => {
-                return Err(Error::UnexpectedToken {
-                    expected: ExpectedTokens::Single(TokenType::Identifier),
-                    found: token,
-                })
-            }
+            Ok(token) => return Err(Error::UnexpectedToken),
             Err(err) => return Err(err),
         };
 
@@ -201,12 +178,7 @@ where
             ids.insert(
                 match self.tokens.next().ok_or(Error::UnexpectedEndOfFile)? {
                     Ok(Token::Identifier(id)) => id,
-                    Ok(token) => {
-                        return Err(Error::UnexpectedToken {
-                            expected: ExpectedTokens::Single(TokenType::Identifier),
-                            found: token,
-                        })
-                    }
+                    Ok(token) => return Err(Error::UnexpectedToken),
                     Err(err) => return Err(err),
                 },
             );

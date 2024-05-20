@@ -1,6 +1,6 @@
 use std::{cell::RefCell, rc::Rc};
 
-use crate::lexer::IdentifierId;
+use crate::lexer::Identifier;
 
 use super::{
     inheriting_hashmap::InheritingHashMap,
@@ -140,7 +140,7 @@ impl Body {
 #[derive(Debug, PartialEq)]
 pub struct BasicBlock {
     pub instructions: Vec<Rc<RefCell<Instruction>>>,
-    identifier_map: InheritingHashMap<IdentifierId, InstructionId>,
+    identifier_map: InheritingHashMap<Identifier, InstructionId>,
     edge: Option<ControlFlowEdge>,
     dominator: Option<BlockIndex>,
     dom_instr_map: InheritingHashMap<StoredBinaryOpcode, Rc<RefCell<Instruction>>>,
@@ -159,7 +159,7 @@ impl BasicBlock {
 
     pub fn from(
         instructions: Vec<Rc<RefCell<Instruction>>>,
-        identifier_map: InheritingHashMap<IdentifierId, InstructionId>,
+        identifier_map: InheritingHashMap<Identifier, InstructionId>,
         edge: Option<ControlFlowEdge>,
         dominator: Option<BlockIndex>,
         dom_instr_map: InheritingHashMap<StoredBinaryOpcode, Rc<RefCell<Instruction>>>,
@@ -188,11 +188,11 @@ impl BasicBlock {
         }
     }
 
-    pub fn get_identifier(&mut self, identifier: &IdentifierId) -> Option<InstructionId> {
+    pub fn get_identifier(&mut self, identifier: &Identifier) -> Option<InstructionId> {
         self.identifier_map.get(identifier)
     }
 
-    pub fn insert_identifier(&mut self, identifier: IdentifierId, instruction: InstructionId) {
+    pub fn insert_identifier(&mut self, identifier: Identifier, instruction: InstructionId) {
         self.identifier_map.insert(identifier, instruction);
     }
 
@@ -210,7 +210,7 @@ impl BasicBlock {
         }
     }
 
-    pub fn get_identifier_map(&self) -> &InheritingHashMap<IdentifierId, InstructionId> {
+    pub fn get_identifier_map(&self) -> &InheritingHashMap<Identifier, InstructionId> {
         &self.identifier_map
     }
 

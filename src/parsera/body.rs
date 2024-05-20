@@ -1,14 +1,14 @@
 use std::{cell::RefCell, collections::HashSet, iter::Peekable, rc::Rc};
 
 use crate::{
-    error::{print_warning, Error, ExpectedTokens, Result, Warning},
+    error::{print_warning, Error, Result, Warning},
     ir::{
         block::{BasicBlock, BlockIndex, Body, ControlFlowEdge},
         inheriting_hashmap::InheritingHashMap,
         instruction::{BranchOpcode, Instruction, InstructionId, Operator, StoredBinaryOpcode},
         ConstBlock,
     },
-    lexer::{IdentifierId, PredefinedFunction, RelOp, Token, TokenType},
+    lexer::{Identifier, PredefinedFunction, RelOp, Token},
 };
 
 use super::match_token;
@@ -23,7 +23,7 @@ where
     cur_block: BlockIndex,
     next_instr_id: InstructionId,
     is_main: bool,
-    declared_identifiers: HashSet<IdentifierId>,
+    declared_identifiers: HashSet<Identifier>,
 }
 
 impl<'a, T> BodyParser<'a, T>
@@ -33,7 +33,7 @@ where
     pub fn parse_main(
         tokens: &'a mut Peekable<T>,
         const_body: &'a mut ConstBlock,
-        declared_identifiers: HashSet<IdentifierId>,
+        declared_identifiers: HashSet<Identifier>,
     ) -> Result<Body> {
         let mut body_parser = Self::new(tokens, const_body, declared_identifiers, true);
         body_parser.stat_sequence()?;
@@ -45,8 +45,8 @@ where
     pub fn parse_func(
         tokens: &'a mut Peekable<T>,
         const_body: &'a mut ConstBlock,
-        declared_identifiers: HashSet<IdentifierId>,
-        params: Vec<IdentifierId>,
+        declared_identifiers: HashSet<Identifier>,
+        params: Vec<Identifier>,
     ) -> Result<Body> {
         let mut body_parser = Self::new(tokens, const_body, declared_identifiers, false);
         body_parser.parse_func_params(params);
@@ -59,7 +59,7 @@ where
     fn new(
         tokens: &'a mut Peekable<T>,
         const_body: &'a mut ConstBlock,
-        declared_identifiers: HashSet<IdentifierId>,
+        declared_identifiers: HashSet<Identifier>,
         is_main: bool,
     ) -> Self {
         let mut body = Body::new();
@@ -110,7 +110,7 @@ where
         match_token(&mut self.tokens, expected)
     }
 
-    fn parse_func_params(&mut self, params: Vec<IdentifierId>) {
+    fn parse_func_params(&mut self, params: Vec<Identifier>) {
         for (i, param) in params.into_iter().enumerate() {
             let get_param_instr_id = self.next_instr_id;
             let get_param_instr = Rc::new(RefCell::new(Instruction::new(
@@ -143,7 +143,7 @@ where
         self.body.insert_block(new_block)
     }
 
-    fn phi_detect(&self) -> Result<Vec<IdentifierId>> {
+    fn phi_detect(&self) -> Result<Vec<Identifier>> {
         let mut tokens = self.tokens.clone();
         let mut identifier_ids = vec![];
         let mut current_block = vec![];
@@ -157,10 +157,7 @@ where
                         current_block.push(id);
                     }
                     Some(Ok(token)) => {
-                        return Err(Error::UnexpectedToken {
-                            expected: ExpectedTokens::Single(TokenType::Identifier),
-                            found: token,
-                        });
+                        return Err(Error::UnexpectedToken);
                     }
                     _ => {
                         return Err(Error::UnexpectedEndOfFile);
@@ -231,16 +228,7 @@ where
             Ok(Token::If) => self.if_statement(),
             Ok(Token::While) => self.while_statement(),
             Ok(Token::Return) => self.return_statement(),
-            Ok(token) => Err(Error::UnexpectedToken {
-                expected: ExpectedTokens::OneOf(vec![
-                    TokenType::Let,
-                    TokenType::Call,
-                    TokenType::If,
-                    TokenType::While,
-                    TokenType::Return,
-                ]),
-                found: token.clone(),
-            }),
+            Ok(token) => Err(Error::UnexpectedToken),
             Err(e) => Err(e.clone()),
         }
     }
@@ -655,10 +643,7 @@ where
                 Ok(call_instr_id)
             }
 
-            token => Err(Error::UnexpectedToken {
-                expected: ExpectedTokens::Single(TokenType::Identifier),
-                found: token,
-            }),
+            token => Err(Error::UnexpectedToken),
         }
     }
 
@@ -686,10 +671,7 @@ where
 
                 Ok(())
             }
-            token => Err(Error::UnexpectedToken {
-                expected: ExpectedTokens::Single(TokenType::Identifier),
-                found: token,
-            }),
+            token => Err(Error::UnexpectedToken),
         }
     }
 
@@ -708,10 +690,7 @@ where
                     relop.opposite(),
                 ))
             }
-            token => Err(Error::UnexpectedToken {
-                expected: ExpectedTokens::Single(TokenType::RelOp),
-                found: token,
-            }),
+            token => Err(Error::UnexpectedToken),
         }
     }
 
@@ -836,24 +815,13 @@ where
                 let instr_id = self.expression()?;
                 match self.tokens.next() {
                     Some(Ok(Token::RPar)) => Ok(instr_id),
-                    Some(Ok(token)) => Err(Error::UnexpectedToken {
-                        expected: ExpectedTokens::Single(Token::RPar.into()),
-                        found: token,
-                    }),
+                    Some(Ok(token)) => Err(Error::UnexpectedToken),
                     Some(Err(e)) => Err(e),
                     None => Err(Error::UnexpectedEndOfFile),
                 }
             }
             Ok(Token::Call) => self.func_call(),
-            Ok(token) => Err(Error::UnexpectedToken {
-                expected: ExpectedTokens::OneOf(vec![
-                    TokenType::Identifier,
-                    TokenType::Number,
-                    TokenType::LPar,
-                    TokenType::Call,
-                ]),
-                found: token.clone(),
-            }),
+            Ok(token) => Err(Error::UnexpectedToken),
             Err(e) => Err(e.clone()),
         }
     }

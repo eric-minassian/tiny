@@ -1,13 +1,12 @@
-use std::{iter::Peekable, str::Chars};
+pub mod error;
 
-use crate::error::Error;
+use std::{collections::HashMap, iter::Peekable, str::Chars};
 
-pub type IdentifierId = usize;
+use self::error::{TokenError, TokenResult};
 
 const RADIX: u32 = 10;
-const RESERVED_WORDS_COUNT: usize = 14;
 
-const RESERVED_WORDS: [(&str, Token); RESERVED_WORDS_COUNT] = [
+const RESERVED_WORDS: [(&str, Token); 14] = [
     ("let", Token::Let),
     ("call", Token::Call),
     ("if", Token::If),
@@ -70,9 +69,7 @@ pub enum PredefinedFunction {
 }
 
 pub type Number = u32;
-pub type Identifier = usize;
-
-pub type TokenResult = Result<Token, ()>;
+pub type Identifier = u32;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Token {
@@ -112,89 +109,9 @@ pub enum Token {
     Invalid,
 }
 
-#[derive(Debug, Clone, PartialEq)]
-pub enum TokenType {
-    Number,
-    Identifier,
-    RelOp,
-    PredefinedFunction,
-
-    Mul,
-    Div,
-    Add,
-    Sub,
-    Assignment,
-    LPar,
-    RPar,
-    LBrack,
-    RBrack,
-    Semicolon,
-    Comma,
-    Period,
-
-    Let,
-    Call,
-    If,
-    Then,
-    Else,
-    Fi,
-    While,
-    Do,
-    Od,
-    Return,
-    Var,
-    Void,
-    Function,
-    Main,
-
-    Invalid,
-}
-
-impl From<Token> for TokenType {
-    fn from(token: Token) -> Self {
-        match token {
-            Token::Number(_) => Self::Number,
-            Token::Identifier(_) => Self::Identifier,
-            Token::RelOp(_) => Self::RelOp,
-            Token::PredefinedFunction(_) => Self::PredefinedFunction,
-
-            Token::Mul => Self::Mul,
-            Token::Div => Self::Div,
-            Token::Add => Self::Add,
-            Token::Sub => Self::Sub,
-            Token::Assignment => Self::Assignment,
-            Token::LPar => Self::LPar,
-            Token::RPar => Self::RPar,
-            Token::LBrack => Self::LBrack,
-            Token::RBrack => Self::RBrack,
-            Token::Semicolon => Self::Semicolon,
-            Token::Comma => Self::Comma,
-            Token::Period => Self::Period,
-
-            Token::Let => Self::Let,
-            Token::Call => Self::Call,
-            Token::If => Self::If,
-            Token::Then => Self::Then,
-            Token::Else => Self::Else,
-            Token::Fi => Self::Fi,
-            Token::While => Self::While,
-            Token::Do => Self::Do,
-            Token::Od => Self::Od,
-            Token::Return => Self::Return,
-            Token::Var => Self::Var,
-            Token::Void => Self::Void,
-            Token::Function => Self::Function,
-            Token::Main => Self::Main,
-
-            Token::Invalid => Self::Invalid,
-        }
-    }
-}
-
-#[derive(Debug, Clone)]
 pub struct Tokenizer<'a> {
     chars: Peekable<Chars<'a>>,
-    identifier_map: Vec<String>,
+    identifier_map: HashMap<String, Identifier>,
 }
 
 impl<'a> Tokenizer<'a> {
@@ -202,10 +119,7 @@ impl<'a> Tokenizer<'a> {
     pub fn new(s: &'a str) -> Self {
         Self {
             chars: s.chars().peekable(),
-            identifier_map: RESERVED_WORDS
-                .iter()
-                .map(|(s, _)| (*s).to_string())
-                .collect(),
+            identifier_map: HashMap::new(),
         }
     }
 
@@ -235,17 +149,19 @@ impl<'a> Tokenizer<'a> {
             }
         }
 
-        match self.identifier_map.iter().position(|v| v == &buffer) {
-            Some(pos) if pos < RESERVED_WORDS_COUNT => RESERVED_WORDS[pos].1.clone(),
-            Some(pos) => Token::Identifier(pos),
-            None => {
-                self.identifier_map.push(buffer);
-                Token::Identifier(self.identifier_map.len() - 1)
-            }
+        if let Some(token) = RESERVED_WORDS.iter().find(|(v, _)| v == &buffer) {
+            token.1.clone()
+        } else if let Some(&token) = self.identifier_map.get(&buffer) {
+            Token::Identifier(token)
+        } else {
+            let ident =
+                Identifier::try_from(self.identifier_map.len()).expect("Too many identifiers");
+            self.identifier_map.insert(buffer, ident);
+            Token::Identifier(ident)
         }
     }
 
-    fn consume_builtin_func(&mut self) -> Result<Token> {
+    fn consume_builtin_func(&mut self) -> TokenResult {
         let mut buffer = String::new();
         while let Some(&ch) = self.chars.peek() {
             if ch.is_ascii_alphabetic() {
@@ -258,10 +174,7 @@ impl<'a> Tokenizer<'a> {
 
         match BUILTIN_FUNCTIONS.iter().find(|(v, _)| v == &buffer) {
             Some((_, token)) => Ok(token.clone()),
-            None => Err(Error::SyntaxError(format!(
-                "Builting Function '{}' Not Found",
-                buffer
-            ))),
+            None => Err(TokenError::InvalidString(buffer)),
         }
     }
 
@@ -272,7 +185,7 @@ impl<'a> Tokenizer<'a> {
 }
 
 impl Iterator for Tokenizer<'_> {
-    type Item = Result<Token>;
+    type Item = TokenResult;
 
     fn next(&mut self) -> Option<Self::Item> {
         while let Some(&ch) = self.chars.peek() {
@@ -293,18 +206,20 @@ impl Iterator for Tokenizer<'_> {
                     self.chars.next();
                     match self.chars.next() {
                         Some('=') => Some(Ok(Token::RelOp(RelOp::Eq))),
-                        _ => Some(Err(Error::SyntaxError(
-                            "Expected '=' after '='".to_string(),
-                        ))),
+                        Some(next_ch) => {
+                            Some(Err(TokenError::InvalidString(format!("{}{}", ch, next_ch))))
+                        }
+                        None => Some(Err(TokenError::UnexpectedEndOfInput)),
                     }
                 }
                 '!' => {
                     self.chars.next();
                     match self.chars.next() {
                         Some('=') => Some(Ok(Token::RelOp(RelOp::Ne))),
-                        _ => Some(Err(Error::SyntaxError(
-                            "Expected '=' after '!'".to_string(),
-                        ))),
+                        Some(next_ch) => {
+                            Some(Err(TokenError::InvalidString(format!("{}{}", ch, next_ch))))
+                        }
+                        None => Some(Err(TokenError::UnexpectedEndOfInput)),
                     }
                 }
 
@@ -346,12 +261,9 @@ impl Iterator for Tokenizer<'_> {
                 ',' => Some(Ok(self.consume_char(Token::Comma))),
                 '.' => Some(Ok(self.consume_char(Token::Period))),
 
-                _ => {
+                ch => {
                     self.chars.next();
-                    Some(Err(Error::SyntaxError(format!(
-                        "Unexpected Character '{}'",
-                        ch
-                    ))))
+                    Some(Err(TokenError::InvalidCharacter(ch)))
                 }
             }
         } else {
@@ -412,12 +324,12 @@ mod tests {
         let input = "x y foo bar hello12 foo";
         let mut tokenizer = Tokenizer::new(input);
         let expected_tokens = [
-            Token::Identifier(14), // Assuming the reserved words occupy the first 14 slots
-            Token::Identifier(15),
-            Token::Identifier(16),
-            Token::Identifier(17),
-            Token::Identifier(18),
-            Token::Identifier(16),
+            Token::Identifier(0),
+            Token::Identifier(1),
+            Token::Identifier(2),
+            Token::Identifier(3),
+            Token::Identifier(4),
+            Token::Identifier(2),
         ];
 
         for expected in expected_tokens {
@@ -437,7 +349,7 @@ mod tests {
             Token::RPar,
             Token::PredefinedFunction(PredefinedFunction::OutputNum),
             Token::LPar,
-            Token::Identifier(14), // Assuming the reserved words occupy the first 14 slots
+            Token::Identifier(0),
             Token::RPar,
             Token::PredefinedFunction(PredefinedFunction::OutputNewLine),
             Token::LPar,
@@ -489,12 +401,12 @@ mod tests {
         let mut tokenizer = Tokenizer::new(input);
         let expected_tokens = [
             Token::Let,
-            Token::Identifier(14), // Assuming the reserved words occupy the first 14 slots
+            Token::Identifier(0),
             Token::Assignment,
             Token::Number(123),
             Token::Semicolon,
             Token::Call,
-            Token::Identifier(15),
+            Token::Identifier(1),
             Token::LPar,
             Token::RPar,
         ];
@@ -512,15 +424,15 @@ mod tests {
         let mut tokenizer = Tokenizer::new(input);
         let expected_tokens = [
             Ok(Token::Let),
-            Ok(Token::Identifier(14)), // Assuming the reserved words occupy the first 14 slots
+            Ok(Token::Identifier(0)),
             Ok(Token::Assignment),
             Ok(Token::Number(123)),
             Ok(Token::Semicolon),
             Ok(Token::Call),
-            Ok(Token::Identifier(15)),
+            Ok(Token::Identifier(1)),
             Ok(Token::LPar),
             Ok(Token::RPar),
-            Err(Error::SyntaxError("Unexpected Character '#'".to_string())),
+            Err(TokenError::InvalidCharacter('#')),
         ];
 
         for expected in expected_tokens {
@@ -533,8 +445,8 @@ mod tests {
         let mut tokenizer = Tokenizer::new(input);
         let expected_tokens = [
             Ok(Token::Let),
-            Ok(Token::Identifier(14)), // Assuming the reserved words occupy the first 14 slots
-            Err(Error::SyntaxError("Expected '=' after '='".to_string())),
+            Ok(Token::Identifier(0)),
+            Err(TokenError::InvalidString("= ".to_string())),
             Ok(Token::Number(123)),
             Ok(Token::Semicolon),
         ];
@@ -549,8 +461,8 @@ mod tests {
         let mut tokenizer = Tokenizer::new(input);
         let expected_tokens = [
             Ok(Token::Let),
-            Ok(Token::Identifier(14)), // Assuming the reserved words occupy the first 14 slots
-            Err(Error::SyntaxError("Expected '=' after '!'".to_string())),
+            Ok(Token::Identifier(0)),
+            Err(TokenError::InvalidString("! ".to_string())),
             Ok(Token::Number(123)),
             Ok(Token::Semicolon),
         ];
@@ -572,14 +484,12 @@ mod tests {
             Ok(Token::RPar),
             Ok(Token::PredefinedFunction(PredefinedFunction::OutputNum)),
             Ok(Token::LPar),
-            Ok(Token::Identifier(14)), // Assuming the reserved words occupy the first 14 slots
+            Ok(Token::Identifier(0)),
             Ok(Token::RPar),
             Ok(Token::PredefinedFunction(PredefinedFunction::OutputNewLine)),
             Ok(Token::LPar),
             Ok(Token::RPar),
-            Err(Error::SyntaxError(
-                "Builting Function 'OutputNotValid' Not Found".to_string(),
-            )),
+            Err(TokenError::InvalidString("OutputNotValid".to_string())),
             Ok(Token::LPar),
             Ok(Token::RPar),
         ];
