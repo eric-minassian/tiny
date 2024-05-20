@@ -3,9 +3,9 @@ mod body;
 use std::{collections::HashSet, iter::Peekable};
 
 use crate::{
-    error::{Error, Result},
+    error::{Error, ExpectedTokens, Result},
     ir::{block::Body, IrStore},
-    lexer::{IdentifierId, Token},
+    lexer::{IdentifierId, Token, TokenType},
 };
 
 use self::body::BodyParser;
@@ -18,7 +18,7 @@ where
 
     if next_token != expected {
         return Err(Error::UnexpectedToken {
-            expected,
+            expected: ExpectedTokens::Single(expected.into()),
             found: next_token,
         });
     }
@@ -74,7 +74,7 @@ where
         self.match_token(Token::LBrack)?;
 
         let main_body =
-            BodyParser::parse_main(&mut self.tokens, &mut self.store.const_block, var_decl);
+            BodyParser::parse_main(&mut self.tokens, &mut self.store.const_block, var_decl)?;
 
         self.store.insert_body("main".to_string(), main_body);
 
@@ -99,7 +99,7 @@ where
                     &mut self.store.const_block,
                     var_decl,
                     params,
-                )
+                )?
             }
             _ => Body::new(),
         };
@@ -117,17 +117,33 @@ where
             return Ok(vec![]);
         }
 
-        let mut ids = vec![match self.tokens.next() {
-            Some(Ok(Token::Identifier(id))) => id,
-            _ => return Err(Error::SyntaxError("Expected identifier".to_string())),
-        }];
+        let mut ids = vec![
+            match self.tokens.next().ok_or(Error::UnexpectedEndOfFile)? {
+                Ok(Token::Identifier(id)) => id,
+                Ok(token) => {
+                    return Err(Error::UnexpectedToken {
+                        expected: ExpectedTokens::Single(TokenType::Identifier),
+                        found: token,
+                    })
+                }
+                Err(err) => return Err(err),
+            },
+        ];
 
         while let Some(Ok(Token::Comma)) = self.tokens.peek() {
             self.tokens.next();
-            ids.push(match self.tokens.next() {
-                Some(Ok(Token::Identifier(id))) => id,
-                _ => return Err(Error::SyntaxError("Expected identifier".to_string())),
-            });
+            ids.push(
+                match self.tokens.next().ok_or(Error::UnexpectedEndOfFile)? {
+                    Ok(Token::Identifier(id)) => id,
+                    Ok(token) => {
+                        return Err(Error::UnexpectedToken {
+                            expected: ExpectedTokens::Single(TokenType::Identifier),
+                            found: token,
+                        })
+                    }
+                    Err(err) => return Err(err),
+                },
+            );
         }
 
         self.match_token(Token::RPar)?;
@@ -140,9 +156,15 @@ where
 
         self.match_token(Token::Function)?;
 
-        let id = match self.tokens.next() {
-            Some(Ok(Token::Identifier(id))) => id,
-            _ => return Err(Error::SyntaxError("Expected identifier".to_string())),
+        let id = match self.tokens.next().ok_or(Error::UnexpectedEndOfFile)? {
+            Ok(Token::Identifier(id)) => id,
+            Ok(token) => {
+                return Err(Error::UnexpectedToken {
+                    expected: ExpectedTokens::Single(TokenType::Identifier),
+                    found: token,
+                })
+            }
+            Err(err) => return Err(err),
         };
 
         let params = self.formal_param()?;
@@ -163,17 +185,31 @@ where
 
         let mut ids = HashSet::new();
 
-        match self.tokens.next() {
-            Some(Ok(Token::Identifier(id))) => ids.insert(id),
-            _ => return Err(Error::SyntaxError("Expected identifier".to_string())),
+        match self.tokens.next().ok_or(Error::UnexpectedEndOfFile)? {
+            Ok(Token::Identifier(id)) => ids.insert(id),
+            Ok(token) => {
+                return Err(Error::UnexpectedToken {
+                    expected: ExpectedTokens::Single(TokenType::Identifier),
+                    found: token,
+                })
+            }
+            Err(err) => return Err(err),
         };
 
         while let Some(Ok(Token::Comma)) = self.tokens.peek() {
             self.tokens.next();
-            ids.insert(match self.tokens.next() {
-                Some(Ok(Token::Identifier(id))) => id,
-                _ => return Err(Error::SyntaxError("Expected identifier".to_string())),
-            });
+            ids.insert(
+                match self.tokens.next().ok_or(Error::UnexpectedEndOfFile)? {
+                    Ok(Token::Identifier(id)) => id,
+                    Ok(token) => {
+                        return Err(Error::UnexpectedToken {
+                            expected: ExpectedTokens::Single(TokenType::Identifier),
+                            found: token,
+                        })
+                    }
+                    Err(err) => return Err(err),
+                },
+            );
         }
 
         self.match_token(Token::Semicolon)?;

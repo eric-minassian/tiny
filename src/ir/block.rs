@@ -63,7 +63,7 @@ impl Body {
         id
     }
 
-    pub fn get_mut_block(&mut self, block_index: BlockIndex) -> Option<&mut BasicBlock> {
+    pub fn get_block_mut(&mut self, block_index: BlockIndex) -> Option<&mut BasicBlock> {
         self.blocks.get_mut(usize::from(block_index))
     }
 
