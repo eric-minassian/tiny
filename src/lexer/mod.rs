@@ -49,14 +49,14 @@ pub enum RelOp {
 }
 impl RelOp {
     #[must_use]
-    pub fn opposite(&self) -> Self {
+    pub const fn opposite(&self) -> Self {
         match self {
-            RelOp::Eq => RelOp::Ne,
-            RelOp::Ne => RelOp::Eq,
-            RelOp::Lt => RelOp::Ge,
-            RelOp::Le => RelOp::Gt,
-            RelOp::Gt => RelOp::Le,
-            RelOp::Ge => RelOp::Lt,
+            Self::Eq => Self::Ne,
+            Self::Ne => Self::Eq,
+            Self::Lt => Self::Ge,
+            Self::Le => Self::Gt,
+            Self::Gt => Self::Le,
+            Self::Ge => Self::Lt,
         }
     }
 }
@@ -110,47 +110,48 @@ pub enum Token {
 }
 
 impl Token {
-    pub fn get_type(&self) -> TokenType {
+    #[must_use]
+    pub const fn get_type(&self) -> TokenType {
         match self {
-            Token::Number(_) => TokenType::Number,
-            Token::Identifier(_) => TokenType::Identifier,
-            Token::RelOp(_) => TokenType::RelOp,
-            Token::PredefinedFunction(_) => TokenType::PredefinedFunction,
+            Self::Number(_) => TokenType::Number,
+            Self::Identifier(_) => TokenType::Identifier,
+            Self::RelOp(_) => TokenType::RelOp,
+            Self::PredefinedFunction(_) => TokenType::PredefinedFunction,
 
-            Token::Mul => TokenType::Mul,
-            Token::Div => TokenType::Div,
-            Token::Add => TokenType::Add,
-            Token::Sub => TokenType::Sub,
-            Token::Assignment => TokenType::Assignment,
-            Token::LPar => TokenType::LPar,
-            Token::RPar => TokenType::RPar,
-            Token::LBrack => TokenType::LBrack,
-            Token::RBrack => TokenType::RBrack,
-            Token::Semicolon => TokenType::Semicolon,
-            Token::Comma => TokenType::Comma,
-            Token::Period => TokenType::Period,
+            Self::Mul => TokenType::Mul,
+            Self::Div => TokenType::Div,
+            Self::Add => TokenType::Add,
+            Self::Sub => TokenType::Sub,
+            Self::Assignment => TokenType::Assignment,
+            Self::LPar => TokenType::LPar,
+            Self::RPar => TokenType::RPar,
+            Self::LBrack => TokenType::LBrack,
+            Self::RBrack => TokenType::RBrack,
+            Self::Semicolon => TokenType::Semicolon,
+            Self::Comma => TokenType::Comma,
+            Self::Period => TokenType::Period,
 
-            Token::Let => TokenType::Let,
-            Token::Call => TokenType::Call,
-            Token::If => TokenType::If,
-            Token::Then => TokenType::Then,
-            Token::Else => TokenType::Else,
-            Token::Fi => TokenType::Fi,
-            Token::While => TokenType::While,
-            Token::Do => TokenType::Do,
-            Token::Od => TokenType::Od,
-            Token::Return => TokenType::Return,
-            Token::Var => TokenType::Var,
-            Token::Void => TokenType::Void,
-            Token::Function => TokenType::Function,
-            Token::Main => TokenType::Main,
+            Self::Let => TokenType::Let,
+            Self::Call => TokenType::Call,
+            Self::If => TokenType::If,
+            Self::Then => TokenType::Then,
+            Self::Else => TokenType::Else,
+            Self::Fi => TokenType::Fi,
+            Self::While => TokenType::While,
+            Self::Do => TokenType::Do,
+            Self::Od => TokenType::Od,
+            Self::Return => TokenType::Return,
+            Self::Var => TokenType::Var,
+            Self::Void => TokenType::Void,
+            Self::Function => TokenType::Function,
+            Self::Main => TokenType::Main,
 
-            Token::Invalid => TokenType::Invalid,
+            Self::Invalid => TokenType::Invalid,
         }
     }
 }
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, PartialEq, Eq, Clone)]
 pub enum TokenType {
     Number,
     Identifier,

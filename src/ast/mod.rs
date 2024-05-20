@@ -7,39 +7,39 @@ pub trait OptionFrom<T>: Sized {
 /* Functions */
 #[cfg_attr(test, derive(Debug, PartialEq))]
 pub struct Computation {
-    vars: Option<VarDecl>,
-    funcs: Vec<FuncDecl>,
-    body: Block,
+    pub vars: Option<VarDecl>,
+    pub funcs: Vec<FuncDecl>,
+    pub body: Block,
 }
 
 #[cfg_attr(test, derive(Debug, PartialEq))]
 pub struct FuncBody {
-    vars: Option<VarDecl>,
-    body: Block,
+    pub vars: Option<VarDecl>,
+    pub body: Block,
 }
 
 #[cfg_attr(test, derive(Debug, PartialEq))]
 pub struct FormalParam {
-    params: Vec<Identifier>,
+    pub params: Vec<Identifier>,
 }
 
 #[cfg_attr(test, derive(Debug, PartialEq))]
 pub struct FuncDecl {
-    is_void: bool,
-    ident: Identifier,
-    params: FormalParam,
-    body: Block,
+    pub is_void: bool,
+    pub ident: Identifier,
+    pub params: FormalParam,
+    pub body: FuncBody,
 }
 
 #[cfg_attr(test, derive(Debug, PartialEq))]
 pub struct VarDecl {
-    vars: Vec<Identifier>,
+    pub vars: Vec<Identifier>,
 }
 
 /* Statements */
 #[cfg_attr(test, derive(Debug, PartialEq))]
 pub struct Block {
-    pub body: Vec<Statement>,
+    pub statements: Vec<Statement>,
 }
 
 #[cfg_attr(test, derive(Debug, PartialEq))]
@@ -65,20 +65,20 @@ pub struct FuncCall {
 
 #[cfg_attr(test, derive(Debug, PartialEq))]
 pub struct IfStatement {
-    rel: Relation,
-    then_block: Block,
-    else_block: Option<Block>,
+    pub rel: Relation,
+    pub then_block: Block,
+    pub else_block: Option<Block>,
 }
 
 #[cfg_attr(test, derive(Debug, PartialEq))]
 pub struct WhileStatement {
-    rel: Relation,
-    block: Block,
+    pub rel: Relation,
+    pub block: Block,
 }
 
 #[cfg_attr(test, derive(Debug, PartialEq))]
 pub struct ReturnStatement {
-    expr: Option<Expression>,
+    pub expr: Option<Expression>,
 }
 
 /* Expressions  */
