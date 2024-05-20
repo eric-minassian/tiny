@@ -1,3 +1,5 @@
+pub mod visit;
+
 use crate::lexer::{Identifier, Number, RelOp, Token};
 
 /* Functions */
