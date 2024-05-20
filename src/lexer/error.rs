@@ -1,6 +1,6 @@
 use super::Token;
 
-#[derive(Debug, PartialEq)]
+#[derive(Debug, PartialEq, Clone)]
 pub enum TokenError {
     InvalidCharacter(char),
     InvalidString(String),

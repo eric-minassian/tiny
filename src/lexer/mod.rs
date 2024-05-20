@@ -109,6 +109,85 @@ pub enum Token {
     Invalid,
 }
 
+impl Token {
+    pub fn get_type(&self) -> TokenType {
+        match self {
+            Token::Number(_) => TokenType::Number,
+            Token::Identifier(_) => TokenType::Identifier,
+            Token::RelOp(_) => TokenType::RelOp,
+            Token::PredefinedFunction(_) => TokenType::PredefinedFunction,
+
+            Token::Mul => TokenType::Mul,
+            Token::Div => TokenType::Div,
+            Token::Add => TokenType::Add,
+            Token::Sub => TokenType::Sub,
+            Token::Assignment => TokenType::Assignment,
+            Token::LPar => TokenType::LPar,
+            Token::RPar => TokenType::RPar,
+            Token::LBrack => TokenType::LBrack,
+            Token::RBrack => TokenType::RBrack,
+            Token::Semicolon => TokenType::Semicolon,
+            Token::Comma => TokenType::Comma,
+            Token::Period => TokenType::Period,
+
+            Token::Let => TokenType::Let,
+            Token::Call => TokenType::Call,
+            Token::If => TokenType::If,
+            Token::Then => TokenType::Then,
+            Token::Else => TokenType::Else,
+            Token::Fi => TokenType::Fi,
+            Token::While => TokenType::While,
+            Token::Do => TokenType::Do,
+            Token::Od => TokenType::Od,
+            Token::Return => TokenType::Return,
+            Token::Var => TokenType::Var,
+            Token::Void => TokenType::Void,
+            Token::Function => TokenType::Function,
+            Token::Main => TokenType::Main,
+
+            Token::Invalid => TokenType::Invalid,
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub enum TokenType {
+    Number,
+    Identifier,
+    RelOp,
+    PredefinedFunction,
+
+    Mul,
+    Div,
+    Add,
+    Sub,
+    Assignment,
+    LPar,
+    RPar,
+    LBrack,
+    RBrack,
+    Semicolon,
+    Comma,
+    Period,
+
+    Let,
+    Call,
+    If,
+    Then,
+    Else,
+    Fi,
+    While,
+    Do,
+    Od,
+    Return,
+    Var,
+    Void,
+    Function,
+    Main,
+
+    Invalid,
+}
+
 pub struct Tokenizer<'a> {
     chars: Peekable<Chars<'a>>,
     identifier_map: HashMap<String, Identifier>,
