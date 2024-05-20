@@ -106,6 +106,87 @@ pub enum Token {
     Void,
     Function,
     Main,
+
+    Invalid,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub enum TokenType {
+    Number,
+    Identifier,
+    RelOp,
+    PredefinedFunction,
+
+    Mul,
+    Div,
+    Add,
+    Sub,
+    Assignment,
+    LPar,
+    RPar,
+    LBrack,
+    RBrack,
+    Semicolon,
+    Comma,
+    Period,
+
+    Let,
+    Call,
+    If,
+    Then,
+    Else,
+    Fi,
+    While,
+    Do,
+    Od,
+    Return,
+    Var,
+    Void,
+    Function,
+    Main,
+
+    Invalid,
+}
+
+impl From<Token> for TokenType {
+    fn from(token: Token) -> Self {
+        match token {
+            Token::Number(_) => Self::Number,
+            Token::Identifier(_) => Self::Identifier,
+            Token::RelOp(_) => Self::RelOp,
+            Token::PredefinedFunction(_) => Self::PredefinedFunction,
+
+            Token::Mul => Self::Mul,
+            Token::Div => Self::Div,
+            Token::Add => Self::Add,
+            Token::Sub => Self::Sub,
+            Token::Assignment => Self::Assignment,
+            Token::LPar => Self::LPar,
+            Token::RPar => Self::RPar,
+            Token::LBrack => Self::LBrack,
+            Token::RBrack => Self::RBrack,
+            Token::Semicolon => Self::Semicolon,
+            Token::Comma => Self::Comma,
+            Token::Period => Self::Period,
+
+            Token::Let => Self::Let,
+            Token::Call => Self::Call,
+            Token::If => Self::If,
+            Token::Then => Self::Then,
+            Token::Else => Self::Else,
+            Token::Fi => Self::Fi,
+            Token::While => Self::While,
+            Token::Do => Self::Do,
+            Token::Od => Self::Od,
+            Token::Return => Self::Return,
+            Token::Var => Self::Var,
+            Token::Void => Self::Void,
+            Token::Function => Self::Function,
+            Token::Main => Self::Main,
+
+            Token::Invalid => Self::Invalid,
+        }
+    }
 }
 
 #[derive(Debug, Clone)]

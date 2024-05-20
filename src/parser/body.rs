@@ -1,14 +1,14 @@
 use std::{cell::RefCell, collections::HashSet, iter::Peekable, rc::Rc};
 
 use crate::{
-    error::{Error, Result},
+    error::{print_warning, Error, ExpectedTokens, Result, Warning},
     ir::{
         block::{BasicBlock, BlockIndex, Body, ControlFlowEdge},
         inheriting_hashmap::InheritingHashMap,
         instruction::{BranchOpcode, Instruction, InstructionId, Operator, StoredBinaryOpcode},
         ConstBlock,
     },
-    lexer::{IdentifierId, PredefinedFunction, RelOp, Token},
+    lexer::{IdentifierId, PredefinedFunction, RelOp, Token, TokenType},
 };
 
 use super::match_token;
@@ -34,13 +34,12 @@ where
         tokens: &'a mut Peekable<T>,
         const_body: &'a mut ConstBlock,
         declared_identifiers: HashSet<IdentifierId>,
-    ) -> Body {
+    ) -> Result<Body> {
         let mut body_parser = Self::new(tokens, const_body, declared_identifiers, true);
-
-        body_parser.stat_sequence().unwrap();
+        body_parser.stat_sequence()?;
         body_parser.push_end_instr();
 
-        body_parser.body
+        Ok(body_parser.body)
     }
 
     pub fn parse_func(
@@ -48,13 +47,13 @@ where
         const_body: &'a mut ConstBlock,
         declared_identifiers: HashSet<IdentifierId>,
         params: Vec<IdentifierId>,
-    ) -> Body {
+    ) -> Result<Body> {
         let mut body_parser = Self::new(tokens, const_body, declared_identifiers, false);
         body_parser.parse_func_params(params);
-        body_parser.stat_sequence().unwrap();
+        body_parser.stat_sequence()?;
         body_parser.push_end_instr();
 
-        body_parser.body
+        Ok(body_parser.body)
     }
 
     fn new(
@@ -79,32 +78,32 @@ where
     }
 
     fn push_end_instr(&mut self) {
-        if self.get_block_mut(self.cur_block).get_edge().is_none() {
-            if self.is_main {
-                let end_instr = Rc::new(RefCell::new(Instruction::new(
-                    self.next_instr_id,
-                    Operator::End,
-                    None,
-                )));
-                self.next_instr_id += 1;
-                self.get_block_mut(self.cur_block).push_instr(end_instr);
+        let block = self
+            .body
+            .get_block_mut(self.cur_block)
+            .expect("Compiler Bug: Block not found");
+        if block.get_edge().is_none() {
+            let operator = if self.is_main {
+                Operator::End
             } else {
-                let return_instr = Rc::new(RefCell::new(Instruction::new(
-                    self.next_instr_id,
-                    Operator::Ret(None),
-                    None,
-                )));
-                self.next_instr_id += 1;
-                self.get_block_mut(self.cur_block).push_instr(return_instr);
-            }
+                Operator::Ret(None)
+            };
+            let end_instr = Rc::new(RefCell::new(Instruction::new(
+                self.next_instr_id,
+                operator,
+                None,
+            )));
+            self.next_instr_id += 1;
 
-            self.get_block_mut(self.cur_block)
-                .set_edge(ControlFlowEdge::Leaf);
+            block.push_instr(end_instr);
+            block.set_edge(ControlFlowEdge::Leaf);
         }
     }
 
     fn get_block_mut(&mut self, index: BlockIndex) -> &mut BasicBlock {
-        self.body.get_mut_block(index).unwrap()
+        self.body
+            .get_block_mut(index)
+            .expect("Compiler Bug: Block not found")
     }
 
     fn match_token(&mut self, expected: Token) -> Result<()> {
@@ -123,7 +122,6 @@ where
 
             self.get_block_mut(self.cur_block)
                 .insert_identifier(param, get_param_instr_id);
-
             self.get_block_mut(self.cur_block)
                 .push_instr(get_param_instr);
         }
@@ -145,12 +143,12 @@ where
         self.body.insert_block(new_block)
     }
 
-    fn phi_detect(&self) -> (Vec<IdentifierId>, bool) {
+    fn phi_detect(&self) -> Result<Vec<IdentifierId>> {
         let mut tokens = self.tokens.clone();
         let mut identifier_ids = vec![];
         let mut current_block = vec![];
 
-        let mut i = 1;
+        let mut depth = 1;
 
         while let Some(token) = tokens.next() {
             match token {
@@ -158,43 +156,42 @@ where
                     Some(Ok(Token::Identifier(id))) => {
                         current_block.push(id);
                     }
+                    Some(Ok(token)) => {
+                        return Err(Error::UnexpectedToken {
+                            expected: ExpectedTokens::Single(TokenType::Identifier),
+                            found: token,
+                        });
+                    }
                     _ => {
-                        panic!("Expected an identifier");
+                        return Err(Error::UnexpectedEndOfFile);
                     }
                 },
-                Ok(Token::While | Token::If) => {
-                    i += 1;
-                }
+                Ok(Token::While | Token::If) => depth += 1,
                 Ok(Token::Od | Token::Fi | Token::Else) => {
-                    i -= 1;
-
+                    depth -= 1;
                     identifier_ids.extend(current_block.iter().cloned());
                     current_block.clear();
-
-                    if i == 0 {
+                    if depth == 0 {
                         break;
                     }
                 }
                 Ok(Token::Return) => {
                     current_block.clear();
-
                     while let Some(_) = tokens.next_if(|t| {
                         !matches!(t, Ok(Token::Fi | Token::Od | Token::Else | Token::RBrack))
                     }) {}
-
-                    if i - 1 == 0 {
-                        return (identifier_ids, true);
+                    if depth == 1 {
+                        return Ok(identifier_ids);
                     }
                 }
                 _ => (),
             }
         }
 
-        let mut identifier_ids = identifier_ids.into_iter().collect::<Vec<_>>();
         identifier_ids.sort();
         identifier_ids.dedup();
 
-        (identifier_ids, false)
+        Ok(identifier_ids)
     }
 
     fn stat_sequence(&mut self) -> Result<()> {
@@ -234,7 +231,17 @@ where
             Ok(Token::If) => self.if_statement(),
             Ok(Token::While) => self.while_statement(),
             Ok(Token::Return) => self.return_statement(),
-            _ => Err(Error::SyntaxError("Statement Error".into())),
+            Ok(token) => Err(Error::UnexpectedToken {
+                expected: ExpectedTokens::OneOf(vec![
+                    TokenType::Let,
+                    TokenType::Call,
+                    TokenType::If,
+                    TokenType::While,
+                    TokenType::Return,
+                ]),
+                found: token.clone(),
+            }),
+            Err(e) => Err(e.clone()),
         }
     }
 
@@ -243,25 +250,19 @@ where
 
         let result_id = self.expression().ok();
 
-        if self.is_main {
-            let end_instr = Rc::new(RefCell::new(Instruction::new(
-                self.next_instr_id,
-                Operator::End,
-                None,
-            )));
-            self.next_instr_id += 1;
-            self.get_block_mut(self.cur_block).push_instr(end_instr);
+        let operator = if self.is_main {
+            Operator::End
         } else {
-            let return_instruction = Rc::new(RefCell::new(Instruction::new(
-                self.next_instr_id,
-                Operator::Ret(result_id),
-                None,
-            )));
-            self.next_instr_id += 1;
-            self.get_block_mut(self.cur_block)
-                .push_instr(return_instruction);
-        }
+            Operator::Ret(result_id)
+        };
+        let return_instr = Rc::new(RefCell::new(Instruction::new(
+            self.next_instr_id,
+            operator,
+            None,
+        )));
+        self.next_instr_id += 1;
 
+        self.get_block_mut(self.cur_block).push_instr(return_instr);
         self.get_block_mut(self.cur_block)
             .set_edge(ControlFlowEdge::Leaf);
 
@@ -282,11 +283,11 @@ where
             .set_edge(ControlFlowEdge::Fallthrough(join_block));
         self.cur_block = join_block;
 
-        let (phis, phi_return) = self.phi_detect();
-        for phi in phis.clone() {
+        let phis = self.phi_detect()?;
+        for phi in &phis {
             let id_val = self
                 .get_block_mut(join_block)
-                .get_identifier(&phi)
+                .get_identifier(phi)
                 .unwrap_or_else(|| self.const_body.insert_returning_id(0));
 
             let phi_id = self.next_instr_id;
@@ -299,7 +300,7 @@ where
             self.next_instr_id += 1;
 
             self.get_block_mut(join_block)
-                .insert_identifier(phi, phi_id);
+                .insert_identifier(phi.clone(), phi_id);
         }
 
         let (comparator_instruction_id, opposite_relop) = self.relation()?;
@@ -317,6 +318,13 @@ where
         self.match_token(Token::Od)?;
 
         let body_block_end = self.cur_block;
+
+        let phi_return = self
+            .body
+            .get_block(body_block_end)
+            .expect("Compiler Bug: Block not found")
+            .get_edge()
+            .is_some_and(|edge| matches!(edge, ControlFlowEdge::Leaf));
 
         if !phi_return {
             self.get_block_mut(body_block_end)
@@ -355,7 +363,7 @@ where
                     .borrow_mut()
                     .update_operator(Operator::Phi(old_val, new_id_val));
             } else {
-                panic!("Expected Phi Operator: {:?}", temp);
+                unreachable!();
             }
         }
 
@@ -383,7 +391,7 @@ where
         let (comparator_instruction_id, opposite_relop) = self.relation()?;
         self.match_token(Token::Then)?;
 
-        let (then_phis, then_phi_return) = self.phi_detect();
+        let then_phis = self.phi_detect()?;
 
         let branch_block = self.cur_block;
         let branch_instruction_id = self.next_instr_id;
@@ -396,6 +404,13 @@ where
 
         self.stat_sequence()?;
         let then_block_end = self.cur_block;
+
+        let then_phi_return = self
+            .body
+            .get_block(then_block_end)
+            .expect("Compiler Bug: Block not found")
+            .get_edge()
+            .is_some_and(|edge| matches!(edge, ControlFlowEdge::Leaf));
 
         let mut else_phis = None;
         let mut else_phi_return = None;
@@ -415,14 +430,21 @@ where
         if is_else_present {
             self.tokens.next();
 
-            let (temp_else_phis, temp_else_phi_return) = self.phi_detect();
+            let temp_else_phis = self.phi_detect()?;
             else_phis = Some(temp_else_phis);
-            else_phi_return = Some(temp_else_phi_return);
 
             let else_block_temp = self.create_block(branch_block);
             self.cur_block = else_block_temp;
             else_block = Some(else_block_temp);
             self.stat_sequence()?;
+
+            let temp_else_phi_return = self
+                .body
+                .get_block(self.cur_block)
+                .expect("Compiler Bug: Block not found")
+                .get_edge()
+                .is_some_and(|edge| matches!(edge, ControlFlowEdge::Leaf));
+            else_phi_return = Some(temp_else_phi_return);
         }
         let else_block_end = self.cur_block;
 
@@ -633,7 +655,10 @@ where
                 Ok(call_instr_id)
             }
 
-            _ => Err(Error::SyntaxError("Expected an identifier".to_string())),
+            token => Err(Error::UnexpectedToken {
+                expected: ExpectedTokens::Single(TokenType::Identifier),
+                found: token,
+            }),
         }
     }
 
@@ -649,10 +674,7 @@ where
                 self.match_token(Token::Assignment)?;
 
                 if !self.declared_identifiers.contains(&identifier_id) {
-                    eprintln!(
-                        "\x1b[93mWarning: Identifier Not Declared In Function Header {:?}.\x1b[0m",
-                        identifier_id
-                    );
+                    print_warning(Warning::UndeclaredIdentifier(identifier_id));
 
                     self.declared_identifiers.insert(identifier_id.clone());
                 }
@@ -664,7 +686,10 @@ where
 
                 Ok(())
             }
-            _ => Err(Error::SyntaxError("Expected an identifier".to_string())),
+            token => Err(Error::UnexpectedToken {
+                expected: ExpectedTokens::Single(TokenType::Identifier),
+                found: token,
+            }),
         }
     }
 
@@ -683,7 +708,10 @@ where
                     relop.opposite(),
                 ))
             }
-            _ => Err(Error::SyntaxError("Expected a relOp".to_string())),
+            token => Err(Error::UnexpectedToken {
+                expected: ExpectedTokens::Single(TokenType::RelOp),
+                found: token,
+            }),
         }
     }
 
@@ -775,10 +803,7 @@ where
                 let identifier_id = id.clone();
 
                 if !self.declared_identifiers.contains(&identifier_id) {
-                    eprintln!(
-                        "\x1b[93mWarning: Identifier Not Declared In Function Header {:?}.\x1b[0m",
-                        identifier_id
-                    );
+                    print_warning(Warning::UndeclaredIdentifier(identifier_id));
 
                     self.declared_identifiers.insert(identifier_id);
                 }
@@ -787,10 +812,8 @@ where
                     .get_block_mut(self.cur_block)
                     .get_identifier(&identifier_id)
                     .unwrap_or_else(|| {
-                        eprintln!(
-                        "\x1b[93mWarning: Uninitialized Identifier {:?}. Initializing to 0.\x1b[0m",
-                        identifier_id
-                    );
+                        print_warning(Warning::UninitializedIdentifier(identifier_id));
+
                         let instruction_id = self.const_body.insert_returning_id(0);
                         self.get_block_mut(self.cur_block)
                             .insert_identifier(identifier_id, instruction_id);
@@ -814,14 +837,23 @@ where
                 match self.tokens.next() {
                     Some(Ok(Token::RPar)) => Ok(instr_id),
                     Some(Ok(token)) => Err(Error::UnexpectedToken {
-                        expected: Token::RPar,
+                        expected: ExpectedTokens::Single(Token::RPar.into()),
                         found: token,
                     }),
-                    _ => Err(Error::SyntaxError("Expected ')'.".to_string())),
+                    Some(Err(e)) => Err(e),
+                    None => Err(Error::UnexpectedEndOfFile),
                 }
             }
             Ok(Token::Call) => self.func_call(),
-            Ok(token) => Err(Error::SyntaxError(format!("Unexpected token: {:?}", token))),
+            Ok(token) => Err(Error::UnexpectedToken {
+                expected: ExpectedTokens::OneOf(vec![
+                    TokenType::Identifier,
+                    TokenType::Number,
+                    TokenType::LPar,
+                    TokenType::Call,
+                ]),
+                found: token.clone(),
+            }),
             Err(e) => Err(e.clone()),
         }
     }
@@ -899,7 +931,8 @@ mod tests {
             &mut tokens.into_iter().peekable(),
             &mut const_body,
             HashSet::new(),
-        );
+        )
+        .expect("Failed to parse body");
 
         // Block 0
         let b0_insr_1 = Rc::new(RefCell::new(Instruction::new(
@@ -1004,7 +1037,8 @@ mod tests {
             &mut tokens.map(|t| Ok(t)).into_iter().peekable(),
             &mut const_body,
             HashSet::new(),
-        );
+        )
+        .expect("Failed to parse body");
 
         let b0_insr_1 = Rc::new(RefCell::new(Instruction::new(
             1,
@@ -1076,7 +1110,8 @@ mod tests {
             &mut tokens.map(|t| Ok(t)).into_iter().peekable(),
             &mut const_body,
             HashSet::new(),
-        );
+        )
+        .expect("Failed to parse body");
 
         let b0_insr_1 = Rc::new(RefCell::new(Instruction::new(
             1,
@@ -1157,7 +1192,8 @@ mod tests {
             &mut tokens.map(|t| Ok(t)).into_iter().peekable(),
             &mut const_body,
             HashSet::new(),
-        );
+        )
+        .expect("Failed to parse body");
 
         // Block 0
         let b0_insr_1 = Rc::new(RefCell::new(Instruction::new(
@@ -1308,7 +1344,8 @@ mod tests {
             &mut tokens.map(|t| Ok(t)).into_iter().peekable(),
             &mut const_body,
             HashSet::new(),
-        );
+        )
+        .expect("Failed to parse body");
 
         // Block 0
         let b0_insr_1 = Rc::new(RefCell::new(Instruction::new(
@@ -1462,7 +1499,8 @@ mod tests {
             &mut tokens.map(|t| Ok(t)).into_iter().peekable(),
             &mut const_body,
             HashSet::new(),
-        );
+        )
+        .expect("Failed to parse body");
 
         // Block 0
         let b0_insr_1 = Rc::new(RefCell::new(Instruction::new(
@@ -1597,7 +1635,8 @@ mod tests {
             &mut tokens.map(|t| Ok(t)).into_iter().peekable(),
             &mut const_body,
             HashSet::new(),
-        );
+        )
+        .expect("Failed to parse body");
 
         // Block 0
         let b0_insr_1 = Rc::new(RefCell::new(Instruction::new(
@@ -1731,7 +1770,8 @@ mod tests {
             &mut tokens.map(|t| Ok(t)).into_iter().peekable(),
             &mut const_body,
             HashSet::new(),
-        );
+        )
+        .expect("Failed to parse body");
 
         // Block 0
         let b0_insr_1 = Rc::new(RefCell::new(Instruction::new(
@@ -1949,7 +1989,8 @@ mod tests {
             &mut tokens.map(|t| Ok(t)).into_iter().peekable(),
             &mut const_body,
             HashSet::new(),
-        );
+        )
+        .expect("Failed to parse body");
 
         // Block 0
         let main_block_identifier_map = InheritingHashMap::from_iter([(1, -1)]);
@@ -2148,7 +2189,8 @@ mod tests {
             &mut tokens.map(|t| Ok(t)).into_iter().peekable(),
             &mut const_body,
             HashSet::new(),
-        );
+        )
+        .expect("Failed to parse body");
 
         // Block 0
         let main_block_identifier_map =
@@ -2413,7 +2455,8 @@ mod tests {
             &mut const_body,
             HashSet::new(),
             vec![],
-        );
+        )
+        .expect("Failed to parse body");
 
         // Block 0
         let b0_insr_1 = Rc::new(RefCell::new(Instruction::new(
@@ -2454,7 +2497,8 @@ mod tests {
             &mut tokens.map(|t| Ok(t)).into_iter().peekable(),
             &mut const_body,
             HashSet::new(),
-        );
+        )
+        .expect("Failed to parse body");
 
         // Block 0
         let b0_insr_1 = Rc::new(RefCell::new(Instruction::new(1, Operator::End, None)));
@@ -2536,7 +2580,8 @@ mod tests {
             &mut const_body,
             HashSet::new(),
             vec![],
-        );
+        )
+        .expect("Failed to parse body");
 
         // Block 0
         let b0_insr_1 = Rc::new(RefCell::new(Instruction::new(1, Operator::Read, None)));
@@ -2691,7 +2736,8 @@ mod tests {
             &mut const_body,
             HashSet::new(),
             vec![],
-        );
+        )
+        .expect("Failed to parse body");
 
         // Block 0
         let b0_insr_1 = Rc::new(RefCell::new(Instruction::new(1, Operator::Read, None)));
@@ -2866,7 +2912,8 @@ mod tests {
             &mut const_body,
             HashSet::new(),
             vec![],
-        );
+        )
+        .expect("Failed to parse body");
 
         // Block 0
         let b0_insr_1 = Rc::new(RefCell::new(Instruction::new(1, Operator::Read, None)));
@@ -3047,7 +3094,8 @@ mod tests {
             &mut const_body,
             HashSet::new(),
             vec![],
-        );
+        )
+        .expect("Failed to parse body");
 
         // Block 0
         let b0_insr_1 = Rc::new(RefCell::new(Instruction::new(1, Operator::Read, None)));
@@ -3329,7 +3377,8 @@ mod tests {
             &mut tokens.map(|t| Ok(t)).into_iter().peekable(),
             &mut const_body,
             HashSet::new(),
-        );
+        )
+        .expect("Failed to parse body");
 
         // Block 0
         let b0_insr_1 = Rc::new(RefCell::new(Instruction::new(1, Operator::Read, None)));
@@ -3428,7 +3477,8 @@ mod tests {
             &mut tokens.map(|t| Ok(t)).into_iter().peekable(),
             &mut const_body,
             HashSet::new(),
-        );
+        )
+        .expect("Failed to parse body");
 
         // Block 0
         let b0_insr_1 = Rc::new(RefCell::new(Instruction::new(
@@ -3557,7 +3607,8 @@ mod tests {
             &mut tokens.map(|t| Ok(t)).into_iter().peekable(),
             &mut const_body,
             HashSet::new(),
-        );
+        )
+        .expect("Failed to parse body");
 
         // Block 0
         let b0_insr_1 = Rc::new(RefCell::new(Instruction::new(1, Operator::Read, None)));
@@ -3631,7 +3682,8 @@ mod tests {
             &mut const_body,
             HashSet::new(),
             vec![1],
-        );
+        )
+        .expect("Failed to parse body");
 
         // Block 0
         let b0_insr_1 = Rc::new(RefCell::new(Instruction::new(
@@ -3690,7 +3742,8 @@ mod tests {
             &mut const_body,
             HashSet::new(),
             vec![1],
-        );
+        )
+        .expect("Failed to parse body");
 
         // Block 0
         let b0_insr_1 = Rc::new(RefCell::new(Instruction::new(
@@ -3746,7 +3799,8 @@ mod tests {
             &mut tokens.map(|t| Ok(t)).into_iter().peekable(),
             &mut const_body,
             HashSet::new(),
-        );
+        )
+        .expect("Failed to parse body");
 
         // Block 0
         let b0_insr_1 = Rc::new(RefCell::new(Instruction::new(
@@ -3770,6 +3824,44 @@ mod tests {
 
         let expected_body = Body::from(Some(0.into()), vec![main_block]);
         let expected_const_body = ConstBlock::from(HashSet::from([0, 1]));
+
+        assert_eq_sorted!(body, expected_body);
+        assert_eq_sorted!(const_body, expected_const_body);
+    }
+
+    #[test]
+    fn main_return() {
+        /*
+        return
+        */
+
+        let tokens = [Token::Return];
+
+        let mut const_body = ConstBlock::new();
+
+        let body = BodyParser::parse_main(
+            &mut tokens.map(|t| Ok(t)).into_iter().peekable(),
+            &mut const_body,
+            HashSet::new(),
+        )
+        .expect("Failed to parse body");
+
+        // Block 0
+        let b0_insr_1 = Rc::new(RefCell::new(Instruction::new(1, Operator::End, None)));
+
+        let main_block_identifier_map = InheritingHashMap::new();
+        let main_block_dom_instr_map = InheritingHashMap::new();
+
+        let main_block = BasicBlock::from(
+            vec![b0_insr_1],
+            main_block_identifier_map,
+            Some(ControlFlowEdge::Leaf),
+            None,
+            main_block_dom_instr_map,
+        );
+
+        let expected_body = Body::from(Some(0.into()), vec![main_block]);
+        let expected_const_body = ConstBlock::from(HashSet::new());
 
         assert_eq_sorted!(body, expected_body);
         assert_eq_sorted!(const_body, expected_const_body);

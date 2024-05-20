@@ -3,26 +3,24 @@ use std::{env, fs, process};
 use tiny::{lexer::Tokenizer, parser::Parser};
 
 fn main() {
-    let args = env::args().collect::<Vec<String>>();
-    if args.len() != 2 {
-        eprintln!("Usage: {} <filename>", args[0]);
+    let filename = env::args().nth(1).unwrap_or_else(|| {
+        eprintln!("Usage: tiny <filename>");
         process::exit(1);
-    }
+    });
 
-    let filename = &args[1];
     let file = fs::read_to_string(filename).unwrap_or_else(|e| {
         eprintln!("Error reading file: {}", e);
         process::exit(1);
     });
 
-    let parser = Parser::parse(Tokenizer::new(&file));
+    let ir = Parser::parse(Tokenizer::new(&file));
 
-    match parser {
+    match ir {
         Ok(ir_store) => {
-            println!("{}", ir_store.dot());
+            print!("{}", ir_store.dot());
         }
         Err(e) => {
-            eprintln!("Error parsing file: {:?}", e);
+            eprintln!("{}", e);
             process::exit(1);
         }
     }
