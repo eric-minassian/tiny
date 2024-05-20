@@ -1,6 +1,6 @@
 use std::{iter::Peekable, str::Chars};
 
-use crate::error::{Error, Result};
+use crate::error::Error;
 
 pub type IdentifierId = usize;
 
@@ -71,6 +71,8 @@ pub enum PredefinedFunction {
 
 pub type Number = u32;
 pub type Identifier = usize;
+
+pub type TokenResult = Result<Token, ()>;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Token {

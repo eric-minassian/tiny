@@ -1,6 +1,6 @@
 use std::{env, fs, process};
 
-use tiny::{lexer::Tokenizer, parser::Parser};
+use tiny::{lexer::Tokenizer, parsera::Parser};
 
 fn main() {
     let filename = env::args().nth(1).unwrap_or_else(|| {
