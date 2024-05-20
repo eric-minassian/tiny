@@ -5,8 +5,8 @@ use std::iter::Peekable;
 use crate::{
     ast::{
         Assignment, Block, Computation, ExprOp, Expression, Factor, FormalParam, FuncBody,
-        FuncCall, FuncDecl, IfStatement, OptionFrom, Relation, ReturnStatement, Statement, Term,
-        TermOp, VarDecl, WhileStatement,
+        FuncCall, FuncDecl, IfStatement, Relation, ReturnStatement, Statement, Term, TermOp,
+        VarDecl, WhileStatement,
     },
     lexer::{error::TokenResult, Identifier, Token, TokenType},
 };
@@ -299,13 +299,13 @@ where
         let mut ops = Vec::new();
 
         while let Some(op) = self.peek()? {
-            match ExprOp::option_from(op) {
-                Some(expr_op) => {
+            match ExprOp::try_from(op) {
+                Ok(expr_op) => {
                     self.tokens.next(); // consume the operator
                     let next_term = self.term()?;
                     ops.push((expr_op, next_term));
                 }
-                None => {
+                Err(_) => {
                     break;
                 }
             }
@@ -319,13 +319,13 @@ where
         let mut ops = Vec::new();
 
         while let Some(op) = self.peek()? {
-            match TermOp::option_from(op) {
-                Some(term_op) => {
+            match TermOp::try_from(op) {
+                Ok(term_op) => {
                     self.tokens.next(); // consume the operator
                     let next_factor = self.factor()?;
                     ops.push((term_op, next_factor));
                 }
-                None => {
+                Err(_) => {
                     break;
                 }
             }

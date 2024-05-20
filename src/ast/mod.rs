@@ -1,9 +1,5 @@
 use crate::lexer::{Identifier, Number, RelOp, Token};
 
-pub trait OptionFrom<T>: Sized {
-    fn option_from(t: T) -> Option<Self>;
-}
-
 /* Functions */
 #[cfg_attr(test, derive(Debug, PartialEq))]
 pub struct Computation {
@@ -116,12 +112,14 @@ pub enum ExprOp {
     Sub,
 }
 
-impl OptionFrom<Token> for ExprOp {
-    fn option_from(t: Token) -> Option<Self> {
+impl TryFrom<Token> for ExprOp {
+    type Error = ();
+
+    fn try_from(t: Token) -> Result<Self, Self::Error> {
         match t {
-            Token::Add => Some(Self::Add),
-            Token::Sub => Some(Self::Sub),
-            _ => None,
+            Token::Add => Ok(Self::Add),
+            Token::Sub => Ok(Self::Sub),
+            _ => Err(()),
         }
     }
 }
@@ -132,12 +130,14 @@ pub enum TermOp {
     Div,
 }
 
-impl OptionFrom<Token> for TermOp {
-    fn option_from(t: Token) -> Option<Self> {
+impl TryFrom<Token> for TermOp {
+    type Error = ();
+
+    fn try_from(t: Token) -> Result<Self, Self::Error> {
         match t {
-            Token::Mul => Some(Self::Mul),
-            Token::Div => Some(Self::Div),
-            _ => None,
+            Token::Mul => Ok(Self::Mul),
+            Token::Div => Ok(Self::Div),
+            _ => Err(()),
         }
     }
 }
