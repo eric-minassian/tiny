@@ -8,11 +8,12 @@ use super::{
     InstructionId,
 };
 
-#[derive(Debug, PartialEq, Clone, Copy)]
+#[derive(Debug, PartialEq, Eq, Clone, Copy)]
 pub struct BlockIndex(usize);
 
 impl BlockIndex {
-    pub fn new(index: usize) -> Self {
+    #[must_use]
+    pub const fn new(index: usize) -> Self {
         Self(index)
     }
 }
@@ -24,7 +25,7 @@ impl From<usize> for BlockIndex {
 }
 
 impl From<BlockIndex> for usize {
-    fn from(index: BlockIndex) -> usize {
+    fn from(index: BlockIndex) -> Self {
         index.0
     }
 }
@@ -42,13 +43,15 @@ pub struct Body {
 }
 
 impl Body {
-    pub fn new() -> Self {
+    #[must_use]
+    pub const fn new() -> Self {
         Self {
             root: None,
             blocks: Vec::new(),
         }
     }
 
+    #[must_use]
     pub fn from(root: Option<BlockIndex>, blocks: Vec<BasicBlock>) -> Self {
         Self { root, blocks }
     }
@@ -67,10 +70,12 @@ impl Body {
         self.blocks.get_mut(usize::from(block_index))
     }
 
+    #[must_use]
     pub fn get_block(&self, block_index: BlockIndex) -> Option<&BasicBlock> {
         self.blocks.get(usize::from(block_index))
     }
 
+    #[must_use]
     pub fn dot(&self, name: &str) -> String {
         let mut dot = String::new();
         dot.push_str(
@@ -97,7 +102,6 @@ impl Body {
             dot.push_str("}\"];\n");
 
             match block.edge {
-                Some(ControlFlowEdge::Leaf) => {}
                 Some(ControlFlowEdge::Fallthrough(next)) => {
                     dot.push_str(&format!(
                         "\tBB{}_{} -> BB{}_{} [label=\"fall-through\", fontsize=10];\n",
@@ -110,10 +114,10 @@ impl Body {
                         id, name, next.0, name
                     ));
                 }
-                None => {}
+                Some(ControlFlowEdge::Leaf) | None => {}
             }
 
-            for instr in block.instructions.iter() {
+            for instr in &block.instructions {
                 let temp = instr.borrow();
                 let operator = temp.operator();
                 if let Operator::Branch(_, block_index, _) = operator {
@@ -148,6 +152,13 @@ pub struct BasicBlock {
 
 impl Default for BasicBlock {
     fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl BasicBlock {
+    #[must_use]
+    pub fn new() -> Self {
         Self {
             instructions: Vec::new(),
             identifier_map: InheritingHashMap::new(),
@@ -156,13 +167,8 @@ impl Default for BasicBlock {
             dom_instr_map: InheritingHashMap::new(),
         }
     }
-}
 
-impl BasicBlock {
-    pub fn new() -> Self {
-        Self::default()
-    }
-
+    #[must_use]
     pub fn from(
         instructions: Vec<Rc<RefCell<Instruction>>>,
         identifier_map: InheritingHashMap<Identifier, InstructionId>,
@@ -172,13 +178,14 @@ impl BasicBlock {
     ) -> Self {
         Self {
             instructions,
-            dominator,
-            edge,
             identifier_map,
+            edge,
+            dominator,
             dom_instr_map,
         }
     }
 
+    #[must_use]
     pub fn get_dom_instr(&self, op_type: &StoredBinaryOpcode) -> Option<Rc<RefCell<Instruction>>> {
         self.dom_instr_map.get(op_type)
     }
@@ -190,7 +197,7 @@ impl BasicBlock {
         let operator = instruction_borrow.operator();
         if let Operator::StoredBinaryOp(stored_binary_opcode, _, _) = operator {
             self.dom_instr_map
-                .insert(stored_binary_opcode.clone(), instr.clone());
+                .insert(*stored_binary_opcode, instr.clone());
         }
     }
 
@@ -206,7 +213,8 @@ impl BasicBlock {
         self.dominator = Some(dom);
     }
 
-    pub fn get_edge(&self) -> Option<&ControlFlowEdge> {
+    #[must_use]
+    pub const fn get_edge(&self) -> Option<&ControlFlowEdge> {
         self.edge.as_ref()
     }
 
@@ -216,18 +224,20 @@ impl BasicBlock {
         }
     }
 
-    pub fn get_identifier_map(&self) -> &InheritingHashMap<Identifier, InstructionId> {
+    #[must_use]
+    pub const fn get_identifier_map(&self) -> &InheritingHashMap<Identifier, InstructionId> {
         &self.identifier_map
     }
 
-    pub fn get_dom_instr_map(
+    #[must_use]
+    pub const fn get_dom_instr_map(
         &self,
     ) -> &InheritingHashMap<StoredBinaryOpcode, Rc<RefCell<Instruction>>> {
         &self.dom_instr_map
     }
 }
 
-#[derive(Debug, PartialEq, Clone)]
+#[derive(Debug, PartialEq, Eq, Clone)]
 pub enum ControlFlowEdge {
     Leaf,
     Fallthrough(BlockIndex),

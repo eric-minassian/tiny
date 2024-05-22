@@ -221,11 +221,11 @@ where
         };
 
         // Consume Unreachable Tokens
-        while let Some(_) = self
+        while self
             .tokens
             .next_if(|t| !matches!(t, Ok(Token::Fi | Token::Od | Token::Else | Token::RBrack)))
-        {
-        }
+            .is_some()
+        {}
 
         Ok(ReturnStatement { expr })
     }
@@ -257,24 +257,20 @@ where
         let then_returns = then_block
             .statements
             .last()
-            .map(|s| matches!(s, Statement::ReturnStatement(_)))
-            .unwrap_or(false);
-        let else_returns = if let Some(else_block) = &else_block {
+            .is_some_and(|s| matches!(s, Statement::ReturnStatement(_)));
+        let else_returns = else_block.as_ref().map_or(false, |else_block| {
             else_block
                 .statements
                 .last()
-                .map(|s| matches!(s, Statement::ReturnStatement(_)))
-                .unwrap_or(false)
-        } else {
-            false
-        };
+                .is_some_and(|s| matches!(s, Statement::ReturnStatement(_)))
+        });
 
         if then_returns && else_returns {
-            while let Some(_) = self
+            while self
                 .tokens
                 .next_if(|t| !matches!(t, Ok(Token::Fi | Token::Od | Token::Else | Token::RBrack)))
-            {
-            }
+                .is_some()
+            {}
         }
 
         Ok(IfStatement {
@@ -359,7 +355,7 @@ where
                     let next_term = self.term()?;
                     ops.push((expr_op, next_term));
                 }
-                Err(_) => {
+                Err(()) => {
                     break;
                 }
             }
@@ -379,7 +375,7 @@ where
                     let next_factor = self.factor()?;
                     ops.push((term_op, next_factor));
                 }
-                Err(_) => {
+                Err(()) => {
                     break;
                 }
             }

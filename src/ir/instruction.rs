@@ -17,15 +17,18 @@ pub struct Instruction {
 }
 
 impl Instruction {
+    #[must_use]
     pub fn new(
         id: InstructionId,
         operator: Operator,
-        dominator: Option<Rc<RefCell<Instruction>>>,
+        dominator: Option<Rc<RefCell<Self>>>,
     ) -> Self {
         if let Some(ssa) = &dominator {
-            let ssa = ssa.try_borrow().unwrap();
+            let ssa = ssa
+                .try_borrow()
+                .expect("Compiler error: Dominator is already borrowed");
 
-            assert_eq!(discriminant(&operator), discriminant(&ssa.operator))
+            assert_eq!(discriminant(&operator), discriminant(&ssa.operator));
         }
 
         Self {
@@ -35,11 +38,13 @@ impl Instruction {
         }
     }
 
-    pub fn id(&self) -> InstructionId {
+    #[must_use]
+    pub const fn id(&self) -> InstructionId {
         self.id
     }
 
-    pub fn operator(&self) -> &Operator {
+    #[must_use]
+    pub const fn operator(&self) -> &Operator {
         &self.operator
     }
 
@@ -47,11 +52,12 @@ impl Instruction {
         self.operator = operator;
     }
 
-    pub fn update_dom(&mut self, dom: Rc<RefCell<Instruction>>) {
+    pub fn update_dom(&mut self, dom: Rc<RefCell<Self>>) {
         self.dominator = Some(dom);
     }
 
-    pub fn check_dominators(&self, ssa: &Instruction) -> Option<InstructionId> {
+    #[must_use]
+    pub fn check_dominators(&self, ssa: &Self) -> Option<InstructionId> {
         if self.operator == ssa.operator {
             return Some(self.id);
         }
@@ -59,7 +65,9 @@ impl Instruction {
         let mut dominator = self.dominator.clone();
 
         while let Some(d) = dominator {
-            let d = d.try_borrow().unwrap();
+            let d = d
+                .try_borrow()
+                .expect("Compiler error: Dominator is already borrowed");
 
             if d.operator == ssa.operator {
                 return Some(d.id);
@@ -78,7 +86,7 @@ impl std::fmt::Display for Instruction {
     }
 }
 
-#[derive(Debug, PartialEq, Eq, Hash, Clone)]
+#[derive(Debug, PartialEq, Eq, Hash, Clone, Copy)]
 pub enum StoredBinaryOpcode {
     Add,
     Sub,
@@ -108,16 +116,16 @@ impl From<&TermOp> for StoredBinaryOpcode {
 impl std::fmt::Display for StoredBinaryOpcode {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            StoredBinaryOpcode::Add => write!(f, "add"),
-            StoredBinaryOpcode::Sub => write!(f, "sub"),
-            StoredBinaryOpcode::Mul => write!(f, "mul"),
-            StoredBinaryOpcode::Div => write!(f, "div"),
-            StoredBinaryOpcode::Cmp => write!(f, "cmp"),
+            Self::Add => write!(f, "add"),
+            Self::Sub => write!(f, "sub"),
+            Self::Mul => write!(f, "mul"),
+            Self::Div => write!(f, "div"),
+            Self::Cmp => write!(f, "cmp"),
         }
     }
 }
 
-#[derive(Debug, PartialEq, Clone)]
+#[derive(Debug, PartialEq, Eq, Clone)]
 pub enum BranchOpcode {
     Eq,
     Ne,
@@ -130,12 +138,12 @@ pub enum BranchOpcode {
 impl std::fmt::Display for BranchOpcode {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            BranchOpcode::Eq => write!(f, "beq"),
-            BranchOpcode::Ne => write!(f, "bne"),
-            BranchOpcode::Le => write!(f, "ble"),
-            BranchOpcode::Lt => write!(f, "blt"),
-            BranchOpcode::Ge => write!(f, "bge"),
-            BranchOpcode::Gt => write!(f, "bgt"),
+            Self::Eq => write!(f, "beq"),
+            Self::Ne => write!(f, "bne"),
+            Self::Le => write!(f, "ble"),
+            Self::Lt => write!(f, "blt"),
+            Self::Ge => write!(f, "bge"),
+            Self::Gt => write!(f, "bgt"),
         }
     }
 }
@@ -174,40 +182,39 @@ impl PartialEq for Operator {
     fn eq(&self, other: &Self) -> bool {
         match (self, other) {
             (
-                Operator::StoredBinaryOp(StoredBinaryOpcode::Cmp, lhs1, rhs1),
-                Operator::StoredBinaryOp(StoredBinaryOpcode::Cmp, lhs2, rhs2),
-            ) => lhs1 == lhs2 && rhs1 == rhs2,
+                Self::StoredBinaryOp(StoredBinaryOpcode::Cmp, lhs1, rhs1),
+                Self::StoredBinaryOp(StoredBinaryOpcode::Cmp, lhs2, rhs2),
+            )
+            | (Self::Phi(lhs1, rhs1), Self::Phi(lhs2, rhs2)) => lhs1 == lhs2 && rhs1 == rhs2,
+            (Self::StoredBinaryOp(op1, lhs1, rhs1), Self::StoredBinaryOp(op2, lhs2, rhs2)) => {
+                op1 == op2 && ((lhs1 == lhs2 && rhs1 == rhs2) || (lhs1 == rhs2 && rhs1 == lhs2))
+            }
+            (Self::Const(val1), Self::Const(val2)) => val1 == val2,
             (
-                Operator::StoredBinaryOp(op1, lhs1, rhs1),
-                Operator::StoredBinaryOp(op2, lhs2, rhs2),
-            ) => op1 == op2 && ((lhs1 == lhs2 && rhs1 == rhs2) || (lhs1 == rhs2 && rhs1 == lhs2)),
-            (Operator::Const(val1), Operator::Const(val2)) => val1 == val2,
-            (
-                Operator::Branch(op1, block_index1, cmp_id1),
-                Operator::Branch(op2, block_index2, cmp_id2),
+                Self::Branch(op1, block_index1, cmp_id1),
+                Self::Branch(op2, block_index2, cmp_id2),
             ) => op1 == op2 && block_index1 == block_index2 && cmp_id1 == cmp_id2,
+            (Self::UnconditionalBranch(block_index1), Self::UnconditionalBranch(block_index2)) => {
+                block_index1 == block_index2
+            }
+            (Self::Ret(val1), Self::Ret(val2)) => val1 == val2,
+            (Self::Write(val1), Self::Write(val2)) | (Self::Jsr(val1), Self::Jsr(val2)) => {
+                val1 == val2
+            }
+            (Self::WriteNL, Self::WriteNL) | (Self::Read, Self::Read) | (Self::End, Self::End) => {
+                true
+            }
+            (Self::GetPar { idx: idx1 }, Self::GetPar { idx: idx2 }) => idx1 == idx2,
             (
-                Operator::UnconditionalBranch(block_index1),
-                Operator::UnconditionalBranch(block_index2),
-            ) => block_index1 == block_index2,
-            (Operator::End, Operator::End) => true,
-            (Operator::Ret(val1), Operator::Ret(val2)) => val1 == val2,
-            (Operator::Read, Operator::Read) => true,
-            (Operator::Write(val1), Operator::Write(val2)) => val1 == val2,
-            (Operator::WriteNL, Operator::WriteNL) => true,
-            (Operator::GetPar { idx: idx1 }, Operator::GetPar { idx: idx2 }) => idx1 == idx2,
-            (
-                Operator::SetPar {
+                Self::SetPar {
                     idx: idx1,
                     val: val1,
                 },
-                Operator::SetPar {
+                Self::SetPar {
                     idx: idx2,
                     val: val2,
                 },
             ) => idx1 == idx2 && val1 == val2,
-            (Operator::Jsr(val1), Operator::Jsr(val2)) => val1 == val2,
-            (Operator::Phi(lhs1, rhs1), Operator::Phi(lhs2, rhs2)) => lhs1 == lhs2 && rhs1 == rhs2,
             _ => false,
         }
     }
@@ -216,26 +223,26 @@ impl PartialEq for Operator {
 impl std::fmt::Display for Operator {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            Operator::Const(val) => write!(f, "const #{}", val),
-            Operator::Branch(op, block_index, cmp_id) => {
+            Self::Const(val) => write!(f, "const #{}", val),
+            Self::Branch(op, block_index, cmp_id) => {
                 write!(f, "{} {} {}", op, block_index, cmp_id)
             }
-            Operator::UnconditionalBranch(basic_block) => write!(f, "bra {}", basic_block),
-            Operator::StoredBinaryOp(op, lhs, rhs) => {
+            Self::UnconditionalBranch(basic_block) => write!(f, "bra {}", basic_block),
+            Self::StoredBinaryOp(op, lhs, rhs) => {
                 write!(f, "{:} {} {}", op, lhs, rhs)
             }
-            Operator::End => write!(f, "end"),
-            Operator::Ret(val) => match val {
+            Self::End => write!(f, "end"),
+            Self::Ret(val) => match val {
                 Some(val) => write!(f, "ret {}", val),
                 None => write!(f, "ret void"),
             },
-            Operator::Read => write!(f, "read"),
-            Operator::Write(val) => write!(f, "write {}", val),
-            Operator::WriteNL => write!(f, "writeNL"),
-            Operator::GetPar { idx } => write!(f, "getpar{}", idx,),
-            Operator::SetPar { idx, val } => write!(f, "setpar{} {}", idx, val),
-            Operator::Jsr(val) => write!(f, "jsr func#{}", val),
-            Operator::Phi(lhs, rhs) => write!(f, "phi {} {}", lhs, rhs),
+            Self::Read => write!(f, "read"),
+            Self::Write(val) => write!(f, "write {}", val),
+            Self::WriteNL => write!(f, "writeNL"),
+            Self::GetPar { idx } => write!(f, "getpar{}", idx,),
+            Self::SetPar { idx, val } => write!(f, "setpar{} {}", idx, val),
+            Self::Jsr(val) => write!(f, "jsr func#{}", val),
+            Self::Phi(lhs, rhs) => write!(f, "phi {} {}", lhs, rhs),
         }
     }
 }
@@ -251,7 +258,7 @@ mod tests {
     fn ssa_different_operators() {
         let ssa = Instruction::new(1, Operator::Const(1), None);
 
-        Instruction::new(
+        let _ = Instruction::new(
             2,
             Operator::StoredBinaryOp(StoredBinaryOpcode::Add, 1, 1),
             Some(Rc::new(RefCell::new(ssa))),

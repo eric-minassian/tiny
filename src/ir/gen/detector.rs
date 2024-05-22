@@ -9,11 +9,12 @@ pub struct PhiDetector {
 }
 
 impl PhiDetector {
+    #[must_use]
     pub fn detect(block: &Block) -> Vec<Identifier> {
         let mut detector = Self::new();
         detector.visit_block(block);
 
-        detector.identifiers.sort();
+        detector.identifiers.sort_unstable();
         detector.identifiers.dedup();
 
         detector.identifiers
@@ -33,7 +34,8 @@ impl AstVisitor for PhiDetector {
             self.visit_statement(statement);
         }
 
-        self.identifiers.extend(self.temp_identifiers.drain(..));
+        self.identifiers.append(&mut self.temp_identifiers);
+        self.temp_identifiers.clear();
     }
 
     fn visit_return_statement(&mut self, _return_statement: &ReturnStatement) {
@@ -41,6 +43,6 @@ impl AstVisitor for PhiDetector {
     }
 
     fn visit_assignment(&mut self, assignment: &Assignment) {
-        self.temp_identifiers.push(assignment.ident.clone());
+        self.temp_identifiers.push(assignment.ident);
     }
 }

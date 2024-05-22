@@ -16,6 +16,7 @@ pub struct IrStore {
 }
 
 impl IrStore {
+    #[must_use]
     pub fn new() -> Self {
         Self {
             bodies: HashMap::new(),
@@ -23,13 +24,15 @@ impl IrStore {
         }
     }
 
-    pub fn from(bodies: HashMap<String, Body>, const_block: ConstBlock) -> Self {
+    #[must_use]
+    pub const fn from(bodies: HashMap<String, Body>, const_block: ConstBlock) -> Self {
         Self {
             bodies,
             const_block,
         }
     }
 
+    #[must_use]
     pub fn get_body(&self, name: &str) -> Option<&Body> {
         self.bodies.get(name)
     }
@@ -42,6 +45,7 @@ impl IrStore {
         self.bodies.get_mut(name)
     }
 
+    #[must_use]
     pub fn dot(&self) -> String {
         let mut dot = String::new();
 
@@ -63,19 +67,21 @@ impl IrStore {
     }
 }
 
-#[derive(Debug, PartialEq, Clone)]
+#[derive(Debug, PartialEq, Eq, Clone)]
 pub struct ConstBlock {
     constants: HashSet<Number>,
 }
 
 impl ConstBlock {
+    #[must_use]
     pub fn new() -> Self {
         Self {
             constants: HashSet::new(),
         }
     }
 
-    pub fn from(constants: HashSet<Number>) -> Self {
+    #[must_use]
+    pub const fn from(constants: HashSet<Number>) -> Self {
         Self { constants }
     }
 
@@ -84,9 +90,10 @@ impl ConstBlock {
             self.constants.insert(value);
         }
 
-        value as InstructionId * -1
+        -(value as InstructionId)
     }
 
+    #[must_use]
     pub fn dot(&self) -> String {
         let mut dot = String::new();
 
@@ -94,7 +101,7 @@ impl ConstBlock {
 
         for (i, constant) in self.constants.iter().enumerate() {
             dot.push_str(
-                format!("{}: const# {}", *constant as InstructionId * -1, constant).as_str(),
+                format!("{}: const# {}", -(*constant as InstructionId), constant).as_str(),
             );
 
             if i < self.constants.len() - 1 {

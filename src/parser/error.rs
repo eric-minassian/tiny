@@ -1,6 +1,6 @@
 use crate::lexer::{error::TokenError, Identifier, Token, TokenType};
 
-#[derive(Debug, PartialEq)]
+#[derive(Debug, PartialEq, Eq)]
 pub enum ParserError {
     InvalidToken(TokenError),
     UnexpectedToken(Vec<TokenType>, Token),
@@ -16,17 +16,17 @@ impl From<TokenError> for ParserError {
 impl std::fmt::Display for ParserError {
     fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
         match self {
-            ParserError::InvalidToken(error) => {
+            Self::InvalidToken(error) => {
                 write!(f, "Invalid token: {}", error)
             }
-            ParserError::UnexpectedToken(expected, found) => {
+            Self::UnexpectedToken(expected, found) => {
                 write!(
                     f,
                     "Unexpected token: expected one of {:?}, found {:?}",
                     expected, found
                 )
             }
-            ParserError::UnexpectedEndOfFile => {
+            Self::UnexpectedEndOfFile => {
                 write!(f, "Unexpected end of file")
             }
         }
@@ -35,7 +35,7 @@ impl std::fmt::Display for ParserError {
 
 pub type ParserResult<T> = Result<T, ParserError>;
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Warning {
     UninitializedIdentifier(Identifier),
     UndeclaredIdentifier(Identifier),
@@ -44,10 +44,10 @@ pub enum Warning {
 impl std::fmt::Display for Warning {
     fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
         match self {
-            Warning::UninitializedIdentifier(id) => {
+            Self::UninitializedIdentifier(id) => {
                 write!(f, "Uninitialized identifier {}, initializing to 0", id)
             }
-            Warning::UndeclaredIdentifier(id) => {
+            Self::UndeclaredIdentifier(id) => {
                 write!(f, "Undeclared identifier {}", id)
             }
         }

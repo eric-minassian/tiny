@@ -30,6 +30,7 @@ pub struct IrGenerator {
 }
 
 impl IrGenerator {
+    #[must_use]
     pub fn generate(ast: &Computation) -> IrStore {
         let mut generator = Self::new();
         generator.visit_computation(ast);
@@ -80,7 +81,7 @@ impl<'a> IrBodyGenerator<'a> {
         let declared_identifiers = computation
             .vars
             .as_ref()
-            .map_or_else(HashSet::new, |v| v.vars.iter().cloned().collect());
+            .map_or_else(HashSet::new, |v| v.vars.iter().copied().collect());
 
         let mut generator = Self::new(const_block, declared_identifiers, true);
         generator.visit_computation(computation);
@@ -94,7 +95,7 @@ impl<'a> IrBodyGenerator<'a> {
             .body
             .vars
             .as_ref()
-            .map_or_else(HashSet::new, |v| v.vars.iter().cloned().collect());
+            .map_or_else(HashSet::new, |v| v.vars.iter().copied().collect());
 
         let mut generator = Self::new(const_block, declared_identifiers, false);
         generator.visit_func_decl(func_decl);
@@ -109,7 +110,7 @@ impl<'a> IrBodyGenerator<'a> {
         is_main: bool,
     ) -> Self {
         let mut body = Body::new();
-        let cur_block = body.insert_block(Default::default());
+        let cur_block = body.insert_block(BasicBlock::default());
         body.set_root(cur_block);
 
         Self {
@@ -133,7 +134,7 @@ impl<'a> IrBodyGenerator<'a> {
 
         let mut new_instr = Instruction::new(
             new_instr_id,
-            Operator::StoredBinaryOp(operator.clone(), left, right),
+            Operator::StoredBinaryOp(operator, left, right),
             None,
         );
 
@@ -149,8 +150,7 @@ impl<'a> IrBodyGenerator<'a> {
         };
 
         let new_instr = Rc::new(RefCell::new(new_instr));
-        self.get_block_mut(self.cur_block)
-            .push_instr(new_instr.clone());
+        self.get_block_mut(self.cur_block).push_instr(new_instr);
         self.next_instr_id += 1;
 
         new_instr_id
@@ -220,7 +220,7 @@ impl AstVisitor for IrBodyGenerator<'_> {
         }
 
         for var in &func_decl.params.params {
-            self.declared_identifiers.insert(var.clone());
+            self.declared_identifiers.insert(*var);
         }
 
         self.visit_func_body(&func_decl.body);
@@ -229,7 +229,7 @@ impl AstVisitor for IrBodyGenerator<'_> {
     fn visit_computation(&mut self, computation: &Computation) {
         if let Some(vars) = &computation.vars {
             for var in &vars.vars {
-                self.declared_identifiers.insert(var.clone());
+                self.declared_identifiers.insert(*var);
             }
         }
 
@@ -286,7 +286,7 @@ impl AstVisitor for IrBodyGenerator<'_> {
             self.next_instr_id += 1;
 
             self.get_block_mut(join_block)
-                .insert_identifier(phi.clone(), phi_id);
+                .insert_identifier(*phi, phi_id);
         }
 
         self.visit_relation(&while_statement.rel);
@@ -479,29 +479,29 @@ impl AstVisitor for IrBodyGenerator<'_> {
         // Should be ordered with no duplicates
         let mut phis = then_phis
             .into_iter()
-            .chain(else_phis.unwrap_or_default().into_iter())
+            .chain(else_phis.unwrap_or_default())
             .collect::<HashSet<_>>()
             .into_iter()
             .collect::<Vec<_>>();
 
-        phis.sort();
+        phis.sort_unstable();
         phis.dedup();
 
         for phi in phis {
             let left_id_val = self
-                .get_block_mut(if !then_phi_return {
-                    then_block_end
-                } else {
+                .get_block_mut(if then_phi_return {
                     branch_block
+                } else {
+                    then_block_end
                 })
                 .get_identifier(&phi)
                 .unwrap_or_else(|| self.const_block.insert_returning_id(0));
 
             let right_id_val = if is_else_present {
-                self.get_block_mut(if !else_phi_return.unwrap() {
-                    else_block_end
-                } else {
+                self.get_block_mut(if else_phi_return.unwrap() {
                     branch_block
+                } else {
+                    else_block_end
                 })
                 .get_identifier(&phi)
                 .unwrap_or_else(|| self.const_block.insert_returning_id(0))
@@ -554,7 +554,7 @@ impl AstVisitor for IrBodyGenerator<'_> {
                 let call_instr_id = self.next_instr_id;
                 let call_instr = Rc::new(RefCell::new(Instruction::new(
                     call_instr_id,
-                    Operator::Jsr(ident.clone() as i32),
+                    Operator::Jsr(*ident as i32),
                     None,
                 )));
                 self.next_instr_id += 1;
@@ -595,7 +595,7 @@ impl AstVisitor for IrBodyGenerator<'_> {
         if !self.declared_identifiers.contains(&assignment.ident) {
             print_warning(Warning::UndeclaredIdentifier(assignment.ident));
 
-            self.declared_identifiers.insert(assignment.ident.clone());
+            self.declared_identifiers.insert(assignment.ident);
         }
 
         self.visit_expression(&assignment.expr);
@@ -648,7 +648,7 @@ impl AstVisitor for IrBodyGenerator<'_> {
             Factor::Expression(expression) => self.visit_expression(expression),
             Factor::FuncCall(func_call) => self.visit_func_call(func_call),
             Factor::Ident(ident) => {
-                let ident = ident.clone();
+                let ident = *ident;
 
                 if !self.declared_identifiers.contains(&ident) {
                     print_warning(Warning::UndeclaredIdentifier(ident));
@@ -671,7 +671,7 @@ impl AstVisitor for IrBodyGenerator<'_> {
                 );
             }
             Factor::Number(num) => {
-                self.prev_val = Some(self.const_block.insert_returning_id(num.clone()));
+                self.prev_val = Some(self.const_block.insert_returning_id(*num));
             }
         }
     }

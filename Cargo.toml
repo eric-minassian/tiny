@@ -13,8 +13,15 @@ unsafe_code = "forbid"
 enum_glob_use = "deny"
 pedantic = "deny"
 nursery = "deny"
-unwrap_used = "deny"
+# unwrap_used = "deny"
 uninlined_format_args = { level = "allow", priority = 1 }
+missing_errors_doc = { level = "allow", priority = 1 }
+module_name_repetitions = { level = "allow", priority = 1 }
+new_without_default = { level = "allow", priority = 1 }
+missing_panics_doc = { level = "allow", priority = 1 }
+needless_pass_by_value = { level = "allow", priority = 1 }
+cast_possible_wrap = { level = "allow", priority = 1 }
+cast_possible_truncation = { level = "allow", priority = 1 }
 
 [dev-dependencies]
 pretty_assertions_sorted = "1.2.3"
