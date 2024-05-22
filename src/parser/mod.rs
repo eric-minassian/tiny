@@ -45,6 +45,7 @@ where
         Ok(self.tokens.peek().cloned().transpose()?)
     }
 
+    #[allow(clippy::needless_pass_by_value)]
     fn match_token(&mut self, expected: Token) -> ParserResult<()> {
         match self.next()? {
             token if token == expected => Ok(()),

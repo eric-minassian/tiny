@@ -56,6 +56,7 @@ impl Instruction {
         self.dominator = Some(dom);
     }
 
+    #[allow(clippy::assigning_clones)]
     #[must_use]
     pub fn check_dominators(&self, ssa: &Self) -> Option<InstructionId> {
         if self.operator == ssa.operator {

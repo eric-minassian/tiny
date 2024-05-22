@@ -9,7 +9,7 @@ use crate::lexer::Number;
 
 use self::{block::Body, instruction::InstructionId};
 
-#[derive(Debug, PartialEq)]
+#[derive(Debug, Default, PartialEq)]
 pub struct IrStore {
     bodies: HashMap<String, Body>,
     pub const_block: ConstBlock,
@@ -67,7 +67,7 @@ impl IrStore {
     }
 }
 
-#[derive(Debug, PartialEq, Eq, Clone)]
+#[derive(Debug, Default, PartialEq, Eq, Clone)]
 pub struct ConstBlock {
     constants: HashSet<Number>,
 }

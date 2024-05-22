@@ -36,7 +36,7 @@ impl std::fmt::Display for BlockIndex {
     }
 }
 
-#[derive(Debug, PartialEq)]
+#[derive(Debug, Default, PartialEq)]
 pub struct Body {
     root: Option<BlockIndex>,
     blocks: Vec<BasicBlock>,
@@ -60,6 +60,7 @@ impl Body {
         self.root = Some(root);
     }
 
+    #[inline]
     pub fn insert_block(&mut self, block: BasicBlock) -> BlockIndex {
         let id = self.blocks.len().into();
         self.blocks.push(block);
@@ -143,8 +144,8 @@ impl Body {
 
 #[derive(Debug, PartialEq)]
 pub struct BasicBlock {
-    pub instructions: Vec<Rc<RefCell<Instruction>>>,
-    identifier_map: InheritingHashMap<Identifier, InstructionId>,
+    pub(super) instructions: Vec<Rc<RefCell<Instruction>>>,
+    pub(super) identifier_map: InheritingHashMap<Identifier, InstructionId>,
     edge: Option<ControlFlowEdge>,
     dominator: Option<BlockIndex>,
     dom_instr_map: InheritingHashMap<StoredBinaryOpcode, Rc<RefCell<Instruction>>>,
@@ -190,6 +191,7 @@ impl BasicBlock {
         self.dom_instr_map.get(op_type)
     }
 
+    #[allow(clippy::needless_pass_by_value)]
     pub fn push_instr(&mut self, instr: Rc<RefCell<Instruction>>) {
         self.instructions.push(instr.clone());
 
@@ -199,14 +201,6 @@ impl BasicBlock {
             self.dom_instr_map
                 .insert(*stored_binary_opcode, instr.clone());
         }
-    }
-
-    pub fn get_identifier(&mut self, identifier: &Identifier) -> Option<InstructionId> {
-        self.identifier_map.get(identifier)
-    }
-
-    pub fn insert_identifier(&mut self, identifier: Identifier, instruction: InstructionId) {
-        self.identifier_map.insert(identifier, instruction);
     }
 
     pub fn update_dominator(&mut self, dom: BlockIndex) {

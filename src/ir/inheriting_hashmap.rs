@@ -1,6 +1,6 @@
 use std::{cell::RefCell, collections::HashMap, hash::Hash, rc::Rc};
 
-#[derive(Debug, PartialEq)]
+#[derive(Debug, Default, PartialEq)]
 pub struct InheritingHashMap<K, V>
 where
     K: Eq + Hash,
@@ -59,7 +59,7 @@ where
     }
 }
 
-#[derive(Debug, PartialEq)]
+#[derive(Debug, Default, PartialEq)]
 pub struct _InheritingHashMap<K, V>
 where
     K: Eq + Hash,
