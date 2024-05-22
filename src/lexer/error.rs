@@ -10,13 +10,13 @@ pub enum TokenError {
 impl std::fmt::Display for TokenError {
     fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
         match self {
-            TokenError::InvalidCharacter(c) => {
+            Self::InvalidCharacter(c) => {
                 write!(f, "Invalid character: {}", c)
             }
-            TokenError::InvalidString(s) => {
+            Self::InvalidString(s) => {
                 write!(f, "Invalid string: {}", s)
             }
-            TokenError::UnexpectedEndOfInput => {
+            Self::UnexpectedEndOfInput => {
                 write!(f, "Unexpected end of input")
             }
         }

@@ -1,0 +1,31 @@
+digraph input {
+subgraph const_block {
+	const_block [shape=record, width=3.0, height=1.0, label="Const | {-1: const# 1 | -2: const# 2}"];
+}
+subgraph cluster_2 {
+	node [shape=record];
+	label="Function 2";
+	rankdir=TB;
+	ranksep=1.0;
+	nodesep=0.5;
+
+	BB0_2 [width=3.0, height=1.0, label="BB0 | {1: getpar1 | 2: cmp 1 -1 | 3: bgt BB2 2}"];
+	BB0_2 -> BB1_2 [label="fall-through", fontsize=10];
+	BB0_2 -> BB2_2 [label="branch", fontsize=10];
+	BB1_2 [width=3.0, height=1.0, label="BB1 | {4: ret 1}"];
+	BB0_2 -> BB1_2 [style=dotted, color=blue, fontsize=10, label="dom"];
+	BB2_2 [width=3.0, height=1.0, label="BB2 | {5: sub 1 -1 | 6: setpar1 5 | 7: jsr func#2 | 8: sub 1 -2 | 9: setpar1 8 | 10: jsr func#2 | 11: add 7 10 | 12: ret 11}"];
+	BB0_2 -> BB2_2 [style=dotted, color=blue, fontsize=10, label="dom"];
+}
+subgraph cluster_main {
+	node [shape=record];
+	label="Function main";
+	rankdir=TB;
+	ranksep=1.0;
+	nodesep=0.5;
+
+	BB0_main [width=3.0, height=1.0, label="BB0 | {1: read | 2: setpar1 1 | 3: jsr func#2 | 4: write 3 | 5: writeNL | 6: end}"];
+}
+const_block -> BB0_2;
+const_block -> BB0_main;
+}

@@ -76,10 +76,10 @@ fn walk_statement<T: AstVisitor>(visitor: &mut T, statement: &Statement) {
         Statement::FuncCall(func_call) => visitor.visit_func_call(func_call),
         Statement::IfStatement(if_statement) => visitor.visit_if_statement(if_statement),
         Statement::WhileStatement(while_statement) => {
-            visitor.visit_while_statement(while_statement)
+            visitor.visit_while_statement(while_statement);
         }
         Statement::ReturnStatement(return_statement) => {
-            visitor.visit_return_statement(return_statement)
+            visitor.visit_return_statement(return_statement);
         }
     }
 }

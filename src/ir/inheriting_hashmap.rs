@@ -1,16 +1,16 @@
-use std::{cell::RefCell, collections::HashMap, rc::Rc};
+use std::{cell::RefCell, collections::HashMap, hash::Hash, rc::Rc};
 
-#[derive(Debug, PartialEq)]
+#[derive(Debug, Default, PartialEq)]
 pub struct InheritingHashMap<K, V>
 where
-    K: Eq + std::hash::Hash,
+    K: Eq + Hash,
 {
     inner: Rc<RefCell<_InheritingHashMap<K, V>>>,
 }
 
 impl<K, V> InheritingHashMap<K, V>
 where
-    K: Eq + std::hash::Hash + Clone,
+    K: Eq + Hash + Clone,
     V: Clone,
 {
     fn new_inner(map: _InheritingHashMap<K, V>) -> Self {
@@ -19,16 +19,14 @@ where
         }
     }
 
+    #[must_use]
     pub fn new() -> Self {
         Self::new_inner(_InheritingHashMap::new())
     }
 
-    pub fn with_dominator(dom: &InheritingHashMap<K, V>) -> Self {
+    #[must_use]
+    pub fn with_dominator(dom: &Self) -> Self {
         Self::new_inner(_InheritingHashMap::with_dominator(dom))
-    }
-
-    pub fn from_iter<T: IntoIterator<Item = (K, V)>>(iter: T) -> Self {
-        Self::new_inner(_InheritingHashMap::from_iter(iter))
     }
 
     pub fn insert(&mut self, key: K, value: V) {
@@ -42,7 +40,7 @@ where
 
 impl<K, V> Clone for InheritingHashMap<K, V>
 where
-    K: Eq + std::hash::Hash,
+    K: Eq + Hash,
 {
     fn clone(&self) -> Self {
         Self {
@@ -51,10 +49,20 @@ where
     }
 }
 
-#[derive(Debug, PartialEq)]
+impl<K, V> FromIterator<(K, V)> for InheritingHashMap<K, V>
+where
+    K: Eq + Hash + Clone,
+    V: Clone,
+{
+    fn from_iter<T: IntoIterator<Item = (K, V)>>(iter: T) -> Self {
+        Self::new_inner(_InheritingHashMap::from_iter(iter))
+    }
+}
+
+#[derive(Debug, Default, PartialEq)]
 pub struct _InheritingHashMap<K, V>
 where
-    K: Eq + std::hash::Hash,
+    K: Eq + Hash,
 {
     dominator: Option<InheritingHashMap<K, V>>,
     local: HashMap<K, V>,
@@ -62,9 +70,10 @@ where
 
 impl<K, V> _InheritingHashMap<K, V>
 where
-    K: Eq + std::hash::Hash + Clone,
+    K: Eq + Hash + Clone,
     V: Clone,
 {
+    #[must_use]
     pub fn new() -> Self {
         Self {
             dominator: None,
@@ -72,18 +81,12 @@ where
         }
     }
 
+    #[must_use]
     pub fn with_dominator(dom: &InheritingHashMap<K, V>) -> Self {
         Self {
             dominator: Some(dom.clone()),
             local: HashMap::new(),
         }
-    }
-
-    pub fn from_iter<T: IntoIterator<Item = (K, V)>>(iter: T) -> Self {
-        iter.into_iter().fold(Self::new(), |mut map, (k, v)| {
-            map.insert(k, v);
-            map
-        })
     }
 
     pub fn insert(&mut self, key: K, value: V) {
@@ -95,6 +98,20 @@ where
             .get(key)
             .cloned()
             .or_else(|| self.dominator.as_ref().and_then(|dom| dom.get(key)))
+    }
+}
+
+impl<K, V> FromIterator<(K, V)> for _InheritingHashMap<K, V>
+where
+    K: Eq + Hash + Clone,
+    V: Clone,
+{
+    fn from_iter<T: IntoIterator<Item = (K, V)>>(iter: T) -> Self {
+        let mut map = Self::new();
+        for (k, v) in iter {
+            map.insert(k, v);
+        }
+        map
     }
 }
 
