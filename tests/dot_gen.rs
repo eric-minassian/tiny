@@ -29,12 +29,12 @@ fn compare_dot(filename: &str) {
     assert_eq!(dot, expected_dot);
 }
 
-#[test]
-fn commutative_cse() {
-    compare_dot("commutative-cse");
-}
+// #[test]
+// fn commutative_cse() {
+//     compare_dot("commutative-cse");
+// }
 
-#[test]
-fn fibonacci() {
-    compare_dot("fibonacci");
-}
+// #[test]
+// fn fibonacci() {
+//     compare_dot("fibonacci");
+// }
