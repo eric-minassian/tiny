@@ -1,0 +1,15 @@
+digraph input {
+subgraph const_block {
+	const_block [shape=record, width=3.0, height=1.0, label="Const | {empty}"];
+}
+subgraph cluster_main {
+	node [shape=record];
+	label="Function main";
+	rankdir=TB;
+	ranksep=1.0;
+	nodesep=0.5;
+
+	BB0_main [width=3.0, height=1.0, label="BB0 | {1: read | 2: read | 3: read | 4: read | 5: mul 1 2 | 6: mul 3 4 | 7: add 5 6 | 8: write 7 | 9: write 7 | 10: end}"];
+}
+const_block -> BB0_main;
+}
