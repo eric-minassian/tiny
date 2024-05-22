@@ -1,6 +1,6 @@
 use std::{env, fs, process};
 
-use tiny::{lexer::Tokenizer, parser::Parser};
+use tiny::{ir::gen::IrGenerator, lexer::Tokenizer, parser::Parser};
 
 fn main() {
     let filename = env::args().nth(1).unwrap_or_else(|| {
@@ -13,11 +13,10 @@ fn main() {
         process::exit(1);
     });
 
-    let ir = Parser::parse(Tokenizer::new(&file));
-
-    match ir {
-        Ok(ir_store) => {
-            print!("{}", ir_store.dot());
+    match Parser::parse(Tokenizer::new(&file)) {
+        Ok(ast) => {
+            let ir = IrGenerator::generate(&ast);
+            print!("{}", ir.dot());
         }
         Err(e) => {
             eprintln!("{}", e);

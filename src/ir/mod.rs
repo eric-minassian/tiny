@@ -1,4 +1,5 @@
 pub mod block;
+pub mod gen;
 pub mod inheriting_hashmap;
 pub mod instruction;
 

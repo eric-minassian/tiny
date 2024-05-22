@@ -1,6 +1,9 @@
 use std::{cell::RefCell, mem::discriminant, rc::Rc};
 
-use crate::lexer::RelOp;
+use crate::{
+    ast::{ExprOp, TermOp},
+    lexer::RelOp,
+};
 
 use super::block::BlockIndex;
 
@@ -82,6 +85,24 @@ pub enum StoredBinaryOpcode {
     Mul,
     Div,
     Cmp,
+}
+
+impl From<&ExprOp> for StoredBinaryOpcode {
+    fn from(op: &ExprOp) -> Self {
+        match op {
+            ExprOp::Add => Self::Add,
+            ExprOp::Sub => Self::Sub,
+        }
+    }
+}
+
+impl From<&TermOp> for StoredBinaryOpcode {
+    fn from(op: &TermOp) -> Self {
+        match op {
+            TermOp::Mul => Self::Mul,
+            TermOp::Div => Self::Div,
+        }
+    }
 }
 
 impl std::fmt::Display for StoredBinaryOpcode {
