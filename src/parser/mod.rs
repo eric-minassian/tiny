@@ -171,6 +171,8 @@ where
             vars.push(self.match_identifier()?);
         }
 
+        self.match_token(Token::Semicolon)?;
+
         Ok(VarDecl { vars })
     }
 
@@ -1163,5 +1165,234 @@ mod tests {
                 ]
             }
         );
+    }
+
+    #[test]
+    fn complete_computation() {
+        let tokens = [
+            Token::Main,
+            Token::Var,
+            Token::Identifier(1),
+            Token::Semicolon,
+            Token::Function,
+            Token::Identifier(2),
+            Token::LPar,
+            Token::Identifier(3),
+            Token::RPar,
+            Token::Semicolon,
+            Token::LBrack,
+            Token::If,
+            Token::Identifier(3),
+            Token::RelOp(RelOp::Le),
+            Token::Number(1),
+            Token::Then,
+            Token::Return,
+            Token::Identifier(3),
+            Token::Fi,
+            Token::Semicolon,
+            Token::Return,
+            Token::Call,
+            Token::Identifier(2),
+            Token::LPar,
+            Token::Identifier(3),
+            Token::Sub,
+            Token::Number(1),
+            Token::RPar,
+            Token::Add,
+            Token::Call,
+            Token::Identifier(2),
+            Token::LPar,
+            Token::Identifier(3),
+            Token::Sub,
+            Token::Number(2),
+            Token::RPar,
+            Token::RBrack,
+            Token::Semicolon,
+            Token::LBrack,
+            Token::Let,
+            Token::Identifier(1),
+            Token::Assignment,
+            Token::Call,
+            Token::PredefinedFunction(PredefinedFunction::InputNum),
+            Token::Semicolon,
+            Token::Let,
+            Token::Identifier(1),
+            Token::Assignment,
+            Token::Call,
+            Token::Identifier(2),
+            Token::LPar,
+            Token::Identifier(1),
+            Token::RPar,
+            Token::Semicolon,
+            Token::Call,
+            Token::PredefinedFunction(PredefinedFunction::OutputNum),
+            Token::LPar,
+            Token::Identifier(1),
+            Token::RPar,
+            Token::Semicolon,
+            Token::Call,
+            Token::PredefinedFunction(PredefinedFunction::OutputNewLine),
+            Token::RBrack,
+            Token::Period,
+        ];
+
+        let mut parser = Parser::new(tokens.into_iter().map(Ok));
+
+        assert_eq!(
+            parser.computation().unwrap(),
+            Computation {
+                vars: Some(VarDecl { vars: vec![1] }),
+                funcs: vec![FuncDecl {
+                    name: "2".to_string(),
+                    is_void: false,
+                    ident: 2,
+                    params: FormalParam { params: vec![3] },
+                    body: FuncBody {
+                        vars: None,
+                        body: Block {
+                            statements: vec![
+                                Statement::IfStatement(IfStatement {
+                                    rel: Relation {
+                                        lhs: Expression {
+                                            term: Term {
+                                                factor: Factor::Ident(3),
+                                                ops: vec![]
+                                            },
+                                            ops: vec![]
+                                        },
+                                        rel_op: RelOp::Le,
+                                        rhs: Expression {
+                                            term: Term {
+                                                factor: Factor::Number(1),
+                                                ops: vec![]
+                                            },
+                                            ops: vec![]
+                                        }
+                                    },
+                                    then_block: Block {
+                                        statements: vec![Statement::ReturnStatement(
+                                            ReturnStatement {
+                                                expr: Some(Expression {
+                                                    term: Term {
+                                                        factor: Factor::Ident(3),
+                                                        ops: vec![]
+                                                    },
+                                                    ops: vec![]
+                                                })
+                                            }
+                                        )]
+                                    },
+                                    else_block: None
+                                }),
+                                Statement::ReturnStatement(ReturnStatement {
+                                    expr: Some(Expression {
+                                        term: Term {
+                                            factor: Factor::FuncCall(FuncCall::Defined(
+                                                DefinedFuncCall {
+                                                    name: "2".to_string(),
+                                                    ident: 2,
+                                                    args: vec![Expression {
+                                                        term: Term {
+                                                            factor: Factor::Ident(3),
+                                                            ops: vec![]
+                                                        },
+                                                        ops: vec![(
+                                                            ExprOp::Sub,
+                                                            Term {
+                                                                factor: Factor::Number(1),
+                                                                ops: vec![]
+                                                            }
+                                                        )]
+                                                    }]
+                                                }
+                                            )),
+                                            ops: vec![]
+                                        },
+                                        ops: vec![(
+                                            ExprOp::Add,
+                                            Term {
+                                                factor: Factor::FuncCall(FuncCall::Defined(
+                                                    DefinedFuncCall {
+                                                        name: "2".to_string(),
+                                                        ident: 2,
+                                                        args: vec![Expression {
+                                                            term: Term {
+                                                                factor: Factor::Ident(3),
+                                                                ops: vec![]
+                                                            },
+                                                            ops: vec![(
+                                                                ExprOp::Sub,
+                                                                Term {
+                                                                    factor: Factor::Number(2),
+                                                                    ops: vec![]
+                                                                }
+                                                            )]
+                                                        }]
+                                                    }
+                                                )),
+                                                ops: vec![]
+                                            }
+                                        )]
+                                    })
+                                })
+                            ]
+                        }
+                    }
+                }],
+                body: Block {
+                    statements: vec![
+                        Statement::Assignment(Assignment {
+                            ident: 1,
+                            expr: Expression {
+                                term: Term {
+                                    factor: Factor::FuncCall(FuncCall::Predefined(
+                                        PredefinedFuncCall {
+                                            func: PredefinedFunction::InputNum,
+                                            args: vec![]
+                                        }
+                                    )),
+                                    ops: vec![]
+                                },
+                                ops: vec![]
+                            }
+                        }),
+                        Statement::Assignment(Assignment {
+                            ident: 1,
+                            expr: Expression {
+                                term: Term {
+                                    factor: Factor::FuncCall(FuncCall::Defined(DefinedFuncCall {
+                                        name: "2".to_string(),
+                                        ident: 2,
+                                        args: vec![Expression {
+                                            term: Term {
+                                                factor: Factor::Ident(1),
+                                                ops: vec![]
+                                            },
+                                            ops: vec![]
+                                        }]
+                                    })),
+                                    ops: vec![]
+                                },
+                                ops: vec![]
+                            }
+                        }),
+                        Statement::FuncCall(FuncCall::Predefined(PredefinedFuncCall {
+                            func: PredefinedFunction::OutputNum,
+                            args: vec![Expression {
+                                term: Term {
+                                    factor: Factor::Ident(1),
+                                    ops: vec![]
+                                },
+                                ops: vec![]
+                            }]
+                        })),
+                        Statement::FuncCall(FuncCall::Predefined(PredefinedFuncCall {
+                            func: PredefinedFunction::OutputNewLine,
+                            args: vec![]
+                        }))
+                    ]
+                }
+            }
+        )
     }
 }

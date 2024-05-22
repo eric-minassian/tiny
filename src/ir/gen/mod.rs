@@ -219,7 +219,21 @@ impl AstVisitor for IrBodyGenerator<'_> {
                 .push_instr(get_param_instr);
         }
 
+        for var in &func_decl.params.params {
+            self.declared_identifiers.insert(var.clone());
+        }
+
         self.visit_func_body(&func_decl.body);
+    }
+
+    fn visit_computation(&mut self, computation: &Computation) {
+        if let Some(vars) = &computation.vars {
+            for var in &vars.vars {
+                self.declared_identifiers.insert(var.clone());
+            }
+        }
+
+        self.visit_block(&computation.body);
     }
 
     fn visit_return_statement(&mut self, return_statement: &ReturnStatement) {
@@ -578,6 +592,12 @@ impl AstVisitor for IrBodyGenerator<'_> {
     }
 
     fn visit_assignment(&mut self, assignment: &Assignment) {
+        if !self.declared_identifiers.contains(&assignment.ident) {
+            print_warning(Warning::UndeclaredIdentifier(assignment.ident));
+
+            self.declared_identifiers.insert(assignment.ident.clone());
+        }
+
         self.visit_expression(&assignment.expr);
         let instr_id = self.prev_val.unwrap();
 
