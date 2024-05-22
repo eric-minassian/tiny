@@ -1,6 +1,6 @@
 pub mod visit;
 
-use crate::lexer::{Identifier, Number, RelOp, Token};
+use crate::lexer::{Identifier, Number, PredefinedFunction, RelOp, Token};
 
 /* Functions */
 #[cfg_attr(test, derive(Debug, PartialEq))]
@@ -57,8 +57,21 @@ pub struct Assignment {
 }
 
 #[cfg_attr(test, derive(Debug, PartialEq))]
-pub struct FuncCall {
+pub enum FuncCall {
+    Defined(DefinedFuncCall),
+    Predefined(PredefinedFuncCall),
+}
+
+#[cfg_attr(test, derive(Debug, PartialEq))]
+pub struct DefinedFuncCall {
+    pub name: String,
     pub ident: Identifier,
+    pub args: Vec<Expression>,
+}
+
+#[cfg_attr(test, derive(Debug, PartialEq))]
+pub struct PredefinedFuncCall {
+    pub func: PredefinedFunction,
     pub args: Vec<Expression>,
 }
 

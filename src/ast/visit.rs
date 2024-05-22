@@ -89,8 +89,17 @@ fn walk_assignment<T: AstVisitor>(visitor: &mut T, assignment: &Assignment) {
 }
 
 fn walk_func_call<T: AstVisitor>(visitor: &mut T, func_call: &FuncCall) {
-    for arg in &func_call.args {
-        visitor.visit_expression(arg);
+    match func_call {
+        FuncCall::Defined(defined_func_call) => {
+            for arg in &defined_func_call.args {
+                visitor.visit_expression(arg);
+            }
+        }
+        FuncCall::Predefined(predefined_func_call) => {
+            for arg in &predefined_func_call.args {
+                visitor.visit_expression(arg);
+            }
+        }
     }
 }
 
@@ -143,8 +152,8 @@ fn walk_factor<T: AstVisitor>(visitor: &mut T, factor: &Factor) {
 #[cfg(test)]
 mod tests {
     use crate::{
-        ast::{ExprOp, FormalParam, TermOp},
-        lexer::RelOp,
+        ast::{DefinedFuncCall, ExprOp, FormalParam, PredefinedFuncCall, TermOp},
+        lexer::{PredefinedFunction, RelOp},
     };
 
     use super::*;
@@ -281,7 +290,8 @@ mod tests {
             ]
         );
 
-        let factor = Factor::FuncCall(FuncCall {
+        let factor = Factor::FuncCall(FuncCall::Defined(DefinedFuncCall {
+            name: "1".to_string(),
             ident: 1,
             args: vec![Expression {
                 term: Term {
@@ -290,7 +300,7 @@ mod tests {
                 },
                 ops: vec![],
             }],
-        });
+        }));
         let mut visitor = VisitTester::new();
         visitor.visit_factor(&factor);
 
@@ -587,7 +597,8 @@ mod tests {
 
     #[test]
     fn visit_func_call() {
-        let func_call = FuncCall {
+        let func_call = FuncCall::Defined(DefinedFuncCall {
+            name: "1".to_string(),
             ident: 1,
             args: vec![Expression {
                 term: Term {
@@ -596,7 +607,39 @@ mod tests {
                 },
                 ops: vec![],
             }],
-        };
+        });
+        let mut visitor = VisitTester::new();
+        visitor.visit_func_call(&func_call);
+
+        assert_eq!(
+            visitor.0,
+            vec![
+                VisitFunc::FuncCall,
+                VisitFunc::Expression,
+                VisitFunc::Term,
+                VisitFunc::Factor
+            ]
+        );
+
+        let func_call = FuncCall::Predefined(PredefinedFuncCall {
+            func: PredefinedFunction::InputNum,
+            args: vec![],
+        });
+        let mut visitor = VisitTester::new();
+        visitor.visit_func_call(&func_call);
+
+        assert_eq!(visitor.0, vec![VisitFunc::FuncCall]);
+
+        let func_call = FuncCall::Predefined(PredefinedFuncCall {
+            func: PredefinedFunction::OutputNum,
+            args: vec![Expression {
+                term: Term {
+                    factor: Factor::Number(1),
+                    ops: vec![],
+                },
+                ops: vec![],
+            }],
+        });
         let mut visitor = VisitTester::new();
         visitor.visit_func_call(&func_call);
 

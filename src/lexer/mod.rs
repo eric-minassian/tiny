@@ -235,7 +235,7 @@ impl<'a> Tokenizer<'a> {
             Token::Identifier(token)
         } else {
             let ident =
-                Identifier::try_from(self.identifier_map.len()).expect("Too many identifiers");
+                Identifier::try_from(self.identifier_map.len()).expect("Too many identifiers") + 1; // 0 is reserved for constant 0
             self.identifier_map.insert(buffer, ident);
             Token::Identifier(ident)
         }
@@ -404,12 +404,12 @@ mod tests {
         let input = "x y foo bar hello12 foo";
         let mut tokenizer = Tokenizer::new(input);
         let expected_tokens = [
-            Token::Identifier(0),
             Token::Identifier(1),
             Token::Identifier(2),
             Token::Identifier(3),
             Token::Identifier(4),
-            Token::Identifier(2),
+            Token::Identifier(5),
+            Token::Identifier(3),
         ];
 
         for expected in expected_tokens {
@@ -429,7 +429,7 @@ mod tests {
             Token::RPar,
             Token::PredefinedFunction(PredefinedFunction::OutputNum),
             Token::LPar,
-            Token::Identifier(0),
+            Token::Identifier(1),
             Token::RPar,
             Token::PredefinedFunction(PredefinedFunction::OutputNewLine),
             Token::LPar,
@@ -481,12 +481,12 @@ mod tests {
         let mut tokenizer = Tokenizer::new(input);
         let expected_tokens = [
             Token::Let,
-            Token::Identifier(0),
+            Token::Identifier(1),
             Token::Assignment,
             Token::Number(123),
             Token::Semicolon,
             Token::Call,
-            Token::Identifier(1),
+            Token::Identifier(2),
             Token::LPar,
             Token::RPar,
         ];
@@ -504,12 +504,12 @@ mod tests {
         let mut tokenizer = Tokenizer::new(input);
         let expected_tokens = [
             Ok(Token::Let),
-            Ok(Token::Identifier(0)),
+            Ok(Token::Identifier(1)),
             Ok(Token::Assignment),
             Ok(Token::Number(123)),
             Ok(Token::Semicolon),
             Ok(Token::Call),
-            Ok(Token::Identifier(1)),
+            Ok(Token::Identifier(2)),
             Ok(Token::LPar),
             Ok(Token::RPar),
             Err(TokenError::InvalidCharacter('#')),
@@ -525,7 +525,7 @@ mod tests {
         let mut tokenizer = Tokenizer::new(input);
         let expected_tokens = [
             Ok(Token::Let),
-            Ok(Token::Identifier(0)),
+            Ok(Token::Identifier(1)),
             Err(TokenError::InvalidString("= ".to_string())),
             Ok(Token::Number(123)),
             Ok(Token::Semicolon),
@@ -541,7 +541,7 @@ mod tests {
         let mut tokenizer = Tokenizer::new(input);
         let expected_tokens = [
             Ok(Token::Let),
-            Ok(Token::Identifier(0)),
+            Ok(Token::Identifier(1)),
             Err(TokenError::InvalidString("! ".to_string())),
             Ok(Token::Number(123)),
             Ok(Token::Semicolon),
@@ -564,7 +564,7 @@ mod tests {
             Ok(Token::RPar),
             Ok(Token::PredefinedFunction(PredefinedFunction::OutputNum)),
             Ok(Token::LPar),
-            Ok(Token::Identifier(0)),
+            Ok(Token::Identifier(1)),
             Ok(Token::RPar),
             Ok(Token::PredefinedFunction(PredefinedFunction::OutputNewLine)),
             Ok(Token::LPar),

@@ -4,9 +4,9 @@ use std::iter::Peekable;
 
 use crate::{
     ast::{
-        Assignment, Block, Computation, ExprOp, Expression, Factor, FormalParam, FuncBody,
-        FuncCall, FuncDecl, IfStatement, Relation, ReturnStatement, Statement, Term, TermOp,
-        VarDecl, WhileStatement,
+        Assignment, Block, Computation, DefinedFuncCall, ExprOp, Expression, Factor, FormalParam,
+        FuncBody, FuncCall, FuncDecl, IfStatement, PredefinedFuncCall, Relation, ReturnStatement,
+        Statement, Term, TermOp, VarDecl, WhileStatement,
     },
     lexer::{error::TokenResult, Identifier, Token, TokenType},
 };
@@ -218,6 +218,13 @@ where
             None
         };
 
+        // Consume Unreachable Tokens
+        while let Some(_) = self
+            .tokens
+            .next_if(|t| !matches!(t, Ok(Token::Fi | Token::Od | Token::Else | Token::RBrack)))
+        {
+        }
+
         Ok(ReturnStatement { expr })
     }
 
@@ -244,6 +251,30 @@ where
         };
         self.match_token(Token::Fi)?;
 
+        // Consume Unreachable Tokens
+        let then_returns = then_block
+            .statements
+            .last()
+            .map(|s| matches!(s, Statement::ReturnStatement(_)))
+            .unwrap_or(false);
+        let else_returns = if let Some(else_block) = &else_block {
+            else_block
+                .statements
+                .last()
+                .map(|s| matches!(s, Statement::ReturnStatement(_)))
+                .unwrap_or(false)
+        } else {
+            false
+        };
+
+        if then_returns && else_returns {
+            while let Some(_) = self
+                .tokens
+                .next_if(|t| !matches!(t, Ok(Token::Fi | Token::Od | Token::Else | Token::RBrack)))
+            {
+            }
+        }
+
         Ok(IfStatement {
             rel,
             then_block,
@@ -251,10 +282,7 @@ where
         })
     }
 
-    fn func_call(&mut self) -> ParserResult<FuncCall> {
-        self.match_token(Token::Call)?;
-        let ident = self.match_identifier()?;
-
+    fn collect_args(&mut self) -> ParserResult<Vec<Expression>> {
         let mut args = Vec::new();
 
         if self.peek()? == Some(Token::LPar) {
@@ -272,7 +300,30 @@ where
             self.match_token(Token::RPar)?;
         }
 
-        Ok(FuncCall { ident, args })
+        Ok(args)
+    }
+
+    fn func_call(&mut self) -> ParserResult<FuncCall> {
+        self.match_token(Token::Call)?;
+
+        match self.next()? {
+            Token::Identifier(ident) => {
+                let args = self.collect_args()?;
+                Ok(FuncCall::Defined(DefinedFuncCall {
+                    name: ident.to_string(), // @TODO: Call tokenizer to get the name
+                    ident,
+                    args,
+                }))
+            }
+            Token::PredefinedFunction(func) => {
+                let args = self.collect_args()?;
+                Ok(FuncCall::Predefined(PredefinedFuncCall { func, args }))
+            }
+            token => Err(ParserError::UnexpectedToken(
+                vec![TokenType::Identifier, TokenType::PredefinedFunction],
+                token,
+            )),
+        }
     }
 
     fn assignment(&mut self) -> ParserResult<Assignment> {
@@ -361,7 +412,7 @@ where
 
 #[cfg(test)]
 mod tests {
-    use crate::lexer::RelOp;
+    use crate::lexer::{PredefinedFunction, RelOp};
 
     use super::*;
 
@@ -396,10 +447,11 @@ mod tests {
 
         assert_eq!(
             parser.factor().unwrap(),
-            Factor::FuncCall(FuncCall {
+            Factor::FuncCall(FuncCall::Defined(DefinedFuncCall {
+                name: "0".to_string(),
                 ident: 0,
                 args: Vec::new()
-            })
+            }))
         );
     }
 
@@ -633,10 +685,11 @@ mod tests {
 
         assert_eq!(
             parser.func_call().unwrap(),
-            FuncCall {
+            FuncCall::Defined(DefinedFuncCall {
+                name: "0".to_string(),
                 ident: 0,
                 args: Vec::new()
-            }
+            })
         );
 
         let input = [Token::Call, Token::Identifier(0), Token::LPar, Token::RPar];
@@ -644,10 +697,11 @@ mod tests {
 
         assert_eq!(
             parser.func_call().unwrap(),
-            FuncCall {
+            FuncCall::Defined(DefinedFuncCall {
+                name: "0".to_string(),
                 ident: 0,
                 args: Vec::new()
-            }
+            })
         );
 
         let input = [
@@ -661,7 +715,8 @@ mod tests {
 
         assert_eq!(
             parser.func_call().unwrap(),
-            FuncCall {
+            FuncCall::Defined(DefinedFuncCall {
+                name: "0".to_string(),
                 ident: 0,
                 args: vec![Expression {
                     term: Term {
@@ -670,7 +725,7 @@ mod tests {
                     },
                     ops: Vec::new()
                 }]
-            }
+            })
         );
 
         let input = [
@@ -686,7 +741,8 @@ mod tests {
 
         assert_eq!(
             parser.func_call().unwrap(),
-            FuncCall {
+            FuncCall::Defined(DefinedFuncCall {
+                name: "0".to_string(),
                 ident: 0,
                 args: vec![
                     Expression {
@@ -704,7 +760,81 @@ mod tests {
                         ops: Vec::new()
                     }
                 ]
-            }
+            })
+        );
+    }
+
+    #[test]
+    fn basic_predefined_func_call() {
+        let input = [
+            Token::Call,
+            Token::PredefinedFunction(PredefinedFunction::InputNum),
+        ];
+        let mut parser = Parser::new(input.into_iter().map(Ok));
+
+        assert_eq!(
+            parser.func_call().unwrap(),
+            FuncCall::Predefined(PredefinedFuncCall {
+                func: PredefinedFunction::InputNum,
+                args: Vec::new()
+            })
+        );
+
+        let input = [
+            Token::Call,
+            Token::PredefinedFunction(PredefinedFunction::OutputNum),
+            Token::LPar,
+            Token::Number(42),
+            Token::RPar,
+        ];
+        let mut parser = Parser::new(input.into_iter().map(Ok));
+
+        assert_eq!(
+            parser.func_call().unwrap(),
+            FuncCall::Predefined(PredefinedFuncCall {
+                func: PredefinedFunction::OutputNum,
+                args: vec![Expression {
+                    term: Term {
+                        factor: Factor::Number(42),
+                        ops: Vec::new()
+                    },
+                    ops: Vec::new()
+                }]
+            })
+        );
+
+        let input = [
+            Token::Call,
+            Token::PredefinedFunction(PredefinedFunction::OutputNum),
+            Token::LPar,
+            Token::Number(42),
+            Token::Comma,
+            Token::Number(22),
+            Token::RPar,
+        ];
+        let mut parser = Parser::new(input.into_iter().map(Ok));
+
+        assert_eq!(
+            parser.func_call().unwrap(),
+            FuncCall::Predefined(PredefinedFuncCall {
+                func: PredefinedFunction::OutputNum,
+                args: vec![
+                    Expression {
+                        term: Term {
+                            factor: Factor::Number(42),
+                            ops: Vec::new()
+                        },
+                        ops: Vec::new()
+                    },
+                    Expression {
+                        term: Term {
+                            factor: Factor::Number(22),
+                            ops: Vec::new()
+                        },
+                        ops: Vec::new()
+                    }
+                ]
+            })
         );
     }
 
@@ -920,7 +1050,7 @@ mod tests {
             Token::Number(42),
             Token::Semicolon,
             Token::Call,
-            Token::Identifier(0),
+            Token::PredefinedFunction(PredefinedFunction::InputNum),
             Token::Semicolon,
         ];
         let mut parser = Parser::new(tokens.into_iter().map(Ok));
@@ -939,10 +1069,97 @@ mod tests {
                             ops: Vec::new()
                         }
                     }),
-                    Statement::FuncCall(FuncCall {
-                        ident: 0,
+                    Statement::FuncCall(FuncCall::Predefined(PredefinedFuncCall {
+                        func: PredefinedFunction::InputNum,
                         args: Vec::new()
-                    })
+                    }))
+                ]
+            }
+        );
+    }
+
+    #[test]
+    fn unreachable_tokens() {
+        let tokens = [
+            Token::Let,
+            Token::Identifier(0),
+            Token::Assignment,
+            Token::Number(22),
+            Token::Semicolon,
+            Token::Return,
+            Token::Identifier(0),
+            Token::Semicolon,
+            Token::Let,
+            Token::Identifier(1),
+            Token::Assignment,
+            Token::Number(42),
+            Token::Semicolon,
+        ];
+
+        let mut parser = Parser::new(tokens.into_iter().map(Ok));
+
+        assert_eq!(
+            parser.stat_sequence().unwrap(),
+            Block {
+                statements: vec![
+                    Statement::Assignment(Assignment {
+                        ident: 0,
+                        expr: Expression {
+                            term: Term {
+                                factor: Factor::Number(22),
+                                ops: Vec::new()
+                            },
+                            ops: Vec::new()
+                        }
+                    }),
+                    Statement::ReturnStatement(ReturnStatement {
+                        expr: Some(Expression {
+                            term: Term {
+                                factor: Factor::Ident(0),
+                                ops: Vec::new()
+                            },
+                            ops: Vec::new()
+                        })
+                    }),
+                ]
+            }
+        );
+    }
+
+    #[test]
+    fn unreachable_token_no_return_val() {
+        let tokens = [
+            Token::Let,
+            Token::Identifier(0),
+            Token::Assignment,
+            Token::Number(22),
+            Token::Semicolon,
+            Token::Return,
+            Token::Semicolon,
+            Token::Let,
+            Token::Identifier(1),
+            Token::Assignment,
+            Token::Number(42),
+            Token::Semicolon,
+        ];
+
+        let mut parser = Parser::new(tokens.into_iter().map(Ok));
+
+        assert_eq!(
+            parser.stat_sequence().unwrap(),
+            Block {
+                statements: vec![
+                    Statement::Assignment(Assignment {
+                        ident: 0,
+                        expr: Expression {
+                            term: Term {
+                                factor: Factor::Number(22),
+                                ops: Vec::new()
+                            },
+                            ops: Vec::new()
+                        }
+                    }),
+                    Statement::ReturnStatement(ReturnStatement { expr: None }),
                 ]
             }
         );
