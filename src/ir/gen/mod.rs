@@ -283,7 +283,11 @@ impl AstVisitor for IrBodyGenerator<'_> {
                 .get_block_mut(join_block)
                 .identifier_map
                 .get(phi)
-                .unwrap_or_else(|| self.const_block.insert_returning_id(0));
+                .unwrap_or_else(|| {
+                    print_warning(Warning::UninitializedIdentifier(*phi));
+
+                    self.const_block.insert_returning_id(0)
+                });
 
             let phi_id = self.next_instr_id;
             let phi_instr = Rc::new(RefCell::new(Instruction::new(
