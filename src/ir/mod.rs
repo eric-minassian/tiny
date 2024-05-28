@@ -3,7 +3,7 @@ pub mod gen;
 pub mod inheriting_hashmap;
 pub mod instruction;
 
-use std::collections::{HashMap, HashSet};
+use std::collections::HashSet;
 
 use crate::lexer::Number;
 
@@ -11,38 +11,22 @@ use self::{block::Body, instruction::InstructionId};
 
 #[derive(Debug, Default, PartialEq)]
 pub struct IrStore {
-    bodies: HashMap<String, Body>,
-    pub const_block: ConstBlock,
+    pub(crate) bodies: Vec<(String, Body)>,
+    pub(crate) const_block: ConstBlock,
 }
 
 impl IrStore {
     #[must_use]
     pub fn new() -> Self {
-        Self {
-            bodies: HashMap::new(),
-            const_block: ConstBlock::new(),
-        }
+        Self::default()
     }
 
     #[must_use]
-    pub const fn from(bodies: HashMap<String, Body>, const_block: ConstBlock) -> Self {
+    pub const fn from(bodies: Vec<(String, Body)>, const_block: ConstBlock) -> Self {
         Self {
             bodies,
             const_block,
         }
-    }
-
-    #[must_use]
-    pub fn get_body(&self, name: &str) -> Option<&Body> {
-        self.bodies.get(name)
-    }
-
-    pub fn insert_body(&mut self, name: String, body: Body) {
-        self.bodies.insert(name, body);
-    }
-
-    pub fn get_mut_body(&mut self, name: &str) -> Option<&mut Body> {
-        self.bodies.get_mut(name)
     }
 
     #[must_use]
@@ -51,13 +35,12 @@ impl IrStore {
 
         dot.push_str("digraph input {\n");
 
-        dot.push_str(self.const_block.dot().as_str());
-
         for (name, body) in &self.bodies {
             dot.push_str(body.dot(name).as_str());
         }
 
-        for name in self.bodies.keys() {
+        dot.push_str(self.const_block.dot().as_str());
+        for (name, _) in &self.bodies {
             dot.push_str(format!("const_block -> BB0_{};\n", name).as_str());
         }
 
@@ -75,9 +58,7 @@ pub struct ConstBlock {
 impl ConstBlock {
     #[must_use]
     pub fn new() -> Self {
-        Self {
-            constants: HashSet::new(),
-        }
+        Self::default()
     }
 
     #[must_use]
@@ -86,11 +67,9 @@ impl ConstBlock {
     }
 
     pub fn insert_returning_id(&mut self, value: Number) -> InstructionId {
-        if !self.constants.contains(&value) {
-            self.constants.insert(value);
-        }
+        self.constants.insert(value);
 
-        -(value as InstructionId)
+        -InstructionId::try_from(value).expect("Compiler error: Invalid constant")
     }
 
     #[must_use]
@@ -101,7 +80,12 @@ impl ConstBlock {
 
         for (i, constant) in self.constants.iter().enumerate() {
             dot.push_str(
-                format!("{}: const# {}", -(*constant as InstructionId), constant).as_str(),
+                format!(
+                    "{}: const# {}",
+                    -InstructionId::try_from(*constant).expect("Compiler error: Invalid constant"),
+                    constant
+                )
+                .as_str(),
             );
 
             if i < self.constants.len() - 1 {

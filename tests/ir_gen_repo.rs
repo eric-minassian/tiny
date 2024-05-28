@@ -1,9 +1,5 @@
 use pretty_assertions_sorted::assert_eq_sorted;
-use std::{
-    cell::RefCell,
-    collections::{HashMap, HashSet},
-    rc::Rc,
-};
+use std::{cell::RefCell, collections::HashSet, rc::Rc};
 use tiny::{
     ir::{
         block::{BasicBlock, Body, ControlFlowEdge},
@@ -76,13 +72,10 @@ fn commutative_cse() {
         main_block_dom_instr_map,
     );
 
-    let main_body = Body::from(Some(0.into()), vec![main_block]);
+    let main_body = Body::from(vec![main_block]);
     let const_block = ConstBlock::from(HashSet::new());
 
-    let expected_ir = IrStore::from(
-        HashMap::from_iter([("main".to_string(), main_body)]),
-        const_block,
-    );
+    let expected_ir = IrStore::from(Vec::from([("main".to_string(), main_body)]), const_block);
 
     assert_eq_sorted!(ir_store, expected_ir);
 }
@@ -130,13 +123,10 @@ fn commutative_add_constant_prop() {
         main_block_dom_instr_map,
     );
 
-    let main_body = Body::from(Some(0.into()), vec![main_block]);
+    let main_body = Body::from(vec![main_block]);
     let const_block = ConstBlock::from(HashSet::from_iter([1]));
 
-    let expected_ir = IrStore::from(
-        HashMap::from_iter([("main".to_string(), main_body)]),
-        const_block,
-    );
+    let expected_ir = IrStore::from(Vec::from([("main".to_string(), main_body)]), const_block);
 
     assert_eq_sorted!(ir_store, expected_ir);
 }
@@ -263,16 +253,10 @@ fn copy_propagation() {
         join_block_dom_instr_map,
     );
 
-    let main_body = Body::from(
-        Some(0.into()),
-        vec![branch_block, then_block, else_block, join_block],
-    );
+    let main_body = Body::from(vec![branch_block, then_block, else_block, join_block]);
     let const_block = ConstBlock::from(HashSet::from_iter([0]));
 
-    let expected_ir = IrStore::from(
-        HashMap::from_iter([("main".to_string(), main_body)]),
-        const_block,
-    );
+    let expected_ir = IrStore::from(Vec::from([("main".to_string(), main_body)]), const_block);
 
     assert_eq_sorted!(ir_store, expected_ir);
 }
@@ -660,30 +644,24 @@ fn nested_if_while() {
         end_block_dom_instr_map,
     );
 
-    let main_body = Body::from(
-        Some(0.into()),
-        vec![
-            initial_block,
-            join_block,
-            branch_block,
-            then_block,
-            then_join_block,
-            then_loop_block,
-            then_end_block,
-            else_block,
-            else_join_block,
-            else_loop_block,
-            else_end_block,
-            loop_end_block,
-            end_block,
-        ],
-    );
+    let main_body = Body::from(vec![
+        initial_block,
+        join_block,
+        branch_block,
+        then_block,
+        then_join_block,
+        then_loop_block,
+        then_end_block,
+        else_block,
+        else_join_block,
+        else_loop_block,
+        else_end_block,
+        loop_end_block,
+        end_block,
+    ]);
     let const_block = ConstBlock::from(HashSet::from_iter([0, 1, 2, 5, 10, 15, 20]));
 
-    let expected_ir = IrStore::from(
-        HashMap::from_iter([("main".to_string(), main_body)]),
-        const_block,
-    );
+    let expected_ir = IrStore::from(Vec::from([("main".to_string(), main_body)]), const_block);
 
     assert_eq_sorted!(ir_store, expected_ir);
 
@@ -865,24 +843,18 @@ fn loop_2x() {
         end_block_dom_instr_map,
     );
 
-    let main_body = Body::from(
-        Some(0.into()),
-        vec![
-            main_block,
-            join_block,
-            loop_block,
-            join_loop_block,
-            loop_loop_block,
-            loop_end_block,
-            end_block,
-        ],
-    );
+    let main_body = Body::from(vec![
+        main_block,
+        join_block,
+        loop_block,
+        join_loop_block,
+        loop_loop_block,
+        loop_end_block,
+        end_block,
+    ]);
     let const_block = ConstBlock::from(HashSet::from_iter([0, 1, 2, 10]));
 
-    let expected_ir = IrStore::from(
-        HashMap::from_iter([("main".to_string(), main_body)]),
-        const_block,
-    );
+    let expected_ir = IrStore::from(Vec::from([("main".to_string(), main_body)]), const_block);
 
     assert_eq_sorted!(ir_store, expected_ir);
 }
@@ -1149,20 +1121,17 @@ fn gcd() {
         mod_loop2_end_block_dom_instr_map,
     );
 
-    let mod_body = Body::from(
-        Some(0.into()),
-        vec![
-            mod_main_block,
-            mod_then_block,
-            mod_branch_join_block,
-            mod_loop_join_block,
-            mod_loop_block,
-            mod_loop_end_block,
-            mod_loop2_join_block,
-            mod_loop2_block,
-            mod_loop2_end_block,
-        ],
-    );
+    let mod_body = Body::from(vec![
+        mod_main_block,
+        mod_then_block,
+        mod_branch_join_block,
+        mod_loop_join_block,
+        mod_loop_block,
+        mod_loop_end_block,
+        mod_loop2_join_block,
+        mod_loop2_block,
+        mod_loop2_end_block,
+    ]);
 
     // Function gcd
     // Block 0
@@ -1269,10 +1238,7 @@ fn gcd() {
         gcd_branch_join_block_dom_instr_map,
     );
 
-    let gcd_body = Body::from(
-        Some(0.into()),
-        vec![gcd_main_block, gcd_then_block, gcd_branch_join_block],
-    );
+    let gcd_body = Body::from(vec![gcd_main_block, gcd_then_block, gcd_branch_join_block]);
 
     // Main
     // Block 0
@@ -1309,12 +1275,12 @@ fn gcd() {
         main_main_block_dom_instr_map,
     );
 
-    let main_body = Body::from(Some(0.into()), vec![main_main_block]);
+    let main_body = Body::from(vec![main_main_block]);
 
     let const_block = ConstBlock::from(HashSet::from_iter([0, 110, 121]));
 
     let expected_ir = IrStore::from(
-        HashMap::from_iter([
+        Vec::from([
             ("1".to_string(), mod_body),
             ("4".to_string(), gcd_body),
             ("main".to_string(), main_body),

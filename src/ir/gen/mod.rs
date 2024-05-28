@@ -1,10 +1,6 @@
 pub mod detector;
 
-use std::{
-    cell::RefCell,
-    collections::{HashMap, HashSet},
-    rc::Rc,
-};
+use std::{cell::RefCell, collections::HashSet, rc::Rc};
 
 use crate::{
     ast::{
@@ -24,25 +20,19 @@ use super::{
     ConstBlock, IrStore,
 };
 
+#[derive(Default)]
 pub struct IrGenerator {
-    bodies: HashMap<String, Body>,
+    bodies: Vec<(String, Body)>,
     const_block: ConstBlock,
 }
 
 impl IrGenerator {
     #[must_use]
     pub fn generate(ast: &Computation) -> IrStore {
-        let mut generator = Self::new();
+        let mut generator = Self::default();
         generator.visit_computation(ast);
 
         IrStore::from(generator.bodies, generator.const_block)
-    }
-
-    fn new() -> Self {
-        Self {
-            bodies: HashMap::new(),
-            const_block: ConstBlock::new(),
-        }
     }
 }
 
@@ -52,17 +42,17 @@ impl AstVisitor for IrGenerator {
             self.visit_func_decl(func);
         }
 
-        self.bodies.insert(
+        self.bodies.push((
             "main".to_string(),
             IrBodyGenerator::generate_main(computation, &mut self.const_block),
-        );
+        ));
     }
 
     fn visit_func_decl(&mut self, func_decl: &FuncDecl) {
-        self.bodies.insert(
+        self.bodies.push((
             func_decl.name.clone(),
             IrBodyGenerator::generate_func(func_decl, &mut self.const_block),
-        );
+        ));
     }
 }
 
@@ -111,7 +101,6 @@ impl<'a> IrBodyGenerator<'a> {
     ) -> Self {
         let mut body = Body::new();
         let cur_block = body.insert_block(BasicBlock::default());
-        body.set_root(cur_block);
 
         Self {
             const_block,
@@ -215,7 +204,10 @@ impl AstVisitor for IrBodyGenerator<'_> {
             let get_param_instr_id = self.next_instr_id;
             let get_param_instr = Rc::new(RefCell::new(Instruction::new(
                 get_param_instr_id,
-                Operator::GetPar { idx: i as u8 + 1 },
+                Operator::GetPar {
+                    idx: u8::try_from(i).expect("Compiler Bug: Parameter get index out of bounds")
+                        + 1,
+                },
                 None,
             )));
             self.next_instr_id += 1;
@@ -567,7 +559,9 @@ impl AstVisitor for IrBodyGenerator<'_> {
                     let arg_instr = Rc::new(RefCell::new(Instruction::new(
                         self.next_instr_id,
                         Operator::SetPar {
-                            idx: idx as u8 + 1,
+                            idx: u8::try_from(idx)
+                                .expect("Compiler Bug: Parameter set index out of bounds")
+                                + 1,
                             val,
                         },
                         None,
@@ -579,7 +573,9 @@ impl AstVisitor for IrBodyGenerator<'_> {
                 let call_instr_id = self.next_instr_id;
                 let call_instr = Rc::new(RefCell::new(Instruction::new(
                     call_instr_id,
-                    Operator::Jsr(*ident as i32),
+                    Operator::Jsr(
+                        i32::try_from(*ident).expect("Compiler Bug: Identifier too large"),
+                    ),
                     None,
                 )));
                 self.next_instr_id += 1;
