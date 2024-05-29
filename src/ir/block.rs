@@ -38,26 +38,18 @@ impl std::fmt::Display for BlockIndex {
 
 #[derive(Debug, Default, PartialEq)]
 pub struct Body {
-    root: Option<BlockIndex>,
     blocks: Vec<BasicBlock>,
 }
 
 impl Body {
     #[must_use]
     pub const fn new() -> Self {
-        Self {
-            root: None,
-            blocks: Vec::new(),
-        }
+        Self { blocks: Vec::new() }
     }
 
     #[must_use]
-    pub fn from(root: Option<BlockIndex>, blocks: Vec<BasicBlock>) -> Self {
-        Self { root, blocks }
-    }
-
-    pub fn set_root(&mut self, root: BlockIndex) {
-        self.root = Some(root);
+    pub fn from(blocks: Vec<BasicBlock>) -> Self {
+        Self { blocks }
     }
 
     #[inline]

@@ -96,7 +96,7 @@ fn simple_assignment() {
         None,
         main_block_dom_instr_map,
     );
-    let expected_body = Body::from(Some(0.into()), vec![main_block]);
+    let expected_body = Body::from(vec![main_block]);
 
     let expected_const_block = ConstBlock::from(HashSet::from([0, 1, 2, 3, 4]));
 
@@ -136,7 +136,7 @@ fn simple_duplicate_assignment() {
         None,
         main_block_dom_instr_map,
     );
-    let expected_body = Body::from(Some(0.into()), vec![main_block]);
+    let expected_body = Body::from(vec![main_block]);
 
     let expected_const_block = ConstBlock::from(HashSet::from([1, 3]));
 
@@ -189,7 +189,7 @@ fn identifier_duplicate_assignment() {
         None,
         main_block_dom_instr_map,
     );
-    let expected_body = Body::from(Some(0.into()), vec![main_block]);
+    let expected_body = Body::from(vec![main_block]);
 
     let expected_const_body = ConstBlock::from(HashSet::from([1, 3]));
 
@@ -298,10 +298,7 @@ fn simple_branch() {
         join_block_dom_instr_map,
     );
 
-    let expected_body = Body::from(
-        Some(0.into()),
-        vec![main_block, then_block, else_block, join_block],
-    );
+    let expected_body = Body::from(vec![main_block, then_block, else_block, join_block]);
 
     let expected_const_body = ConstBlock::from(HashSet::from([1, 2, 4]));
 
@@ -423,10 +420,7 @@ fn simple_duplicate_branch() {
         join_block_dom_instr_map,
     );
 
-    let expected_body = Body::from(
-        Some(0.into()),
-        vec![main_block, then_block, else_block, join_block],
-    );
+    let expected_body = Body::from(vec![main_block, then_block, else_block, join_block]);
 
     let expected_const_body = ConstBlock::from(HashSet::from([0, 1, 2, 4]));
 
@@ -543,10 +537,7 @@ fn new_identifiers_branch() {
         join_block_dom_instr_map,
     );
 
-    let expected_body = Body::from(
-        Some(0.into()),
-        vec![main_block, then_block, else_block, join_block],
-    );
+    let expected_body = Body::from(vec![main_block, then_block, else_block, join_block]);
 
     let expected_const_body = ConstBlock::from(HashSet::from([0, 1, 2, 4, 13]));
 
@@ -632,7 +623,7 @@ fn branch_without_else_statement() {
         join_block_dom_instr_map,
     );
 
-    let expected_body = Body::from(Some(0.into()), vec![main_block, then_block, join_block]);
+    let expected_body = Body::from(vec![main_block, then_block, join_block]);
 
     let expected_const_body = ConstBlock::from(HashSet::from([1, 2]));
 
@@ -826,18 +817,15 @@ fn nested_if_statements() {
         join_block_dom_instr_map,
     );
 
-    let expected_body = Body::from(
-        Some(0.into()),
-        vec![
-            main_block,
-            then_block,
-            sub_then_block,
-            sub_else_block,
-            sub_join_block,
-            else_block,
-            join_block,
-        ],
-    );
+    let expected_body = Body::from(vec![
+        main_block,
+        then_block,
+        sub_then_block,
+        sub_else_block,
+        sub_join_block,
+        else_block,
+        join_block,
+    ]);
 
     let expected_const_body = ConstBlock::from(HashSet::from([0, 1, 3, 4, 5, 12]));
 
@@ -948,10 +936,7 @@ fn simple_while_loop() {
         escape_block_dom_instr_map,
     );
 
-    let expected_body = Body::from(
-        Some(0.into()),
-        vec![main_block, join_block, body_block, escape_block],
-    );
+    let expected_body = Body::from(vec![main_block, join_block, body_block, escape_block]);
 
     let expected_const_body = ConstBlock::from(HashSet::from([1, 3]));
 
@@ -1206,18 +1191,15 @@ fn nested_while_loop() {
         escape_block_dom_instr_map,
     );
 
-    let expected_body = Body::from(
-        Some(0.into()),
-        vec![
-            main_block,
-            join_block,
-            body_block,
-            join_block_2,
-            body_block_2,
-            escape_block2,
-            escape_block,
-        ],
-    );
+    let expected_body = Body::from(vec![
+        main_block,
+        join_block,
+        body_block,
+        join_block_2,
+        body_block_2,
+        escape_block2,
+        escape_block,
+    ]);
 
     let expected_const_body = ConstBlock::from(HashSet::from([0, 1, 10]));
 
@@ -1264,7 +1246,7 @@ fn simple_return() {
         main_block_dom_instr_map,
     );
 
-    let expected_body = Body::from(Some(0.into()), vec![main_block]);
+    let expected_body = Body::from(vec![main_block]);
 
     let expected_const_body = ConstBlock::from(HashSet::from([1]));
 
@@ -1306,7 +1288,7 @@ fn simple_void_return() {
         main_block_dom_instr_map,
     );
 
-    let expected_body = Body::from(Some(0.into()), vec![main_block]);
+    let expected_body = Body::from(vec![main_block]);
 
     let expected_const_body = ConstBlock::new();
 
@@ -1428,10 +1410,7 @@ fn loop_body_return() {
         escape_block_dom_instr_map,
     );
 
-    let expected_body = Body::from(
-        Some(0.into()),
-        vec![main_block, join_block, body_block, escape_block],
-    );
+    let expected_body = Body::from(vec![main_block, join_block, body_block, escape_block]);
 
     let expected_const_body = ConstBlock::from(HashSet::from([1, 3]));
 
@@ -1562,10 +1541,7 @@ fn single_branch_return() {
         join_block_dom_instr_map,
     );
 
-    let expected_body = Body::from(
-        Some(0.into()),
-        vec![branch_block, then_block, else_block, join_block],
-    );
+    let expected_body = Body::from(vec![branch_block, then_block, else_block, join_block]);
 
     let expected_const_body = ConstBlock::from(HashSet::from([1, 3]));
 
@@ -1681,7 +1657,7 @@ fn both_branch_return() {
         else_block_dom_instr_map,
     );
 
-    let expected_body = Body::from(Some(0.into()), vec![branch_block, then_block, else_block]);
+    let expected_body = Body::from(vec![branch_block, then_block, else_block]);
 
     let expected_const_body = ConstBlock::from(HashSet::from([1, 3]));
 
@@ -1939,20 +1915,17 @@ fn nested_both_branch_return() {
         join_block_dom_instr_map,
     );
 
-    let expected_body = Body::from(
-        Some(0.into()),
-        vec![
-            branch_block,
-            then_block,
-            then_then_block,
-            then_else_block,
-            else_block,
-            else_then_block,
-            else_else_block,
-            join_else_block,
-            join_block,
-        ],
-    );
+    let expected_body = Body::from(vec![
+        branch_block,
+        then_block,
+        then_then_block,
+        then_else_block,
+        else_block,
+        else_then_block,
+        else_else_block,
+        join_else_block,
+        join_block,
+    ]);
 
     let expected_const_body = ConstBlock::from(HashSet::from([1, 2, 3]));
 
@@ -1999,7 +1972,7 @@ fn simple_predefined_function_call() {
         main_block_dom_instr_map,
     );
 
-    let expected_body = Body::from(Some(0.into()), vec![main_block]);
+    let expected_body = Body::from(vec![main_block]);
     let expected_const_body = ConstBlock::from(HashSet::new());
 
     assert_eq_sorted!(body, expected_body);
@@ -2070,7 +2043,7 @@ fn simple_user_defined_functions() {
         main_block_dom_instr_map,
     );
 
-    let expected_body = Body::from(Some(0.into()), vec![main_block]);
+    let expected_body = Body::from(vec![main_block]);
     let expected_const_body = ConstBlock::from(HashSet::from([1]));
 
     assert_eq_sorted!(body, expected_body);
@@ -2124,7 +2097,7 @@ fn void_func_with_return() {
         func_block_dom_instr_map,
     );
 
-    let expected_body = Body::from(Some(0.into()), vec![func_block]);
+    let expected_body = Body::from(vec![func_block]);
     let expected_const_body = ConstBlock::from(HashSet::from([1]));
 
     assert_eq_sorted!(body, expected_body);
@@ -2165,7 +2138,7 @@ fn undeclared_identifier() {
         main_block_dom_instr_map,
     );
 
-    let expected_body = Body::from(Some(0.into()), vec![main_block]);
+    let expected_body = Body::from(vec![main_block]);
     let expected_const_body = ConstBlock::from(HashSet::from([0, 1]));
 
     assert_eq_sorted!(body, expected_body);
@@ -2200,7 +2173,7 @@ fn main_return() {
         main_block_dom_instr_map,
     );
 
-    let expected_body = Body::from(Some(0.into()), vec![main_block]);
+    let expected_body = Body::from(vec![main_block]);
     let expected_const_body = ConstBlock::from(HashSet::new());
 
     assert_eq_sorted!(body, expected_body);
