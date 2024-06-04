@@ -1,6 +1,6 @@
 use std::{env, fs, process};
 
-use tiny::{ir::gen::IrGenerator, lexer::Tokenizer, parser::Parser};
+use tiny::{config::Config, ir::gen::IrGenerator, lexer::Tokenizer, parser::Parser};
 
 fn main() {
     let filename = env::args().nth(1).unwrap_or_else(|| {
@@ -13,9 +13,11 @@ fn main() {
         process::exit(1);
     });
 
-    match Parser::parse(Tokenizer::new(&file)) {
+    let config = Config::from_env();
+
+    match Parser::parse(Tokenizer::new(&file), &config) {
         Ok(ast) => {
-            let ir = IrGenerator::generate(&ast);
+            let ir = IrGenerator::generate(&ast, &config);
             print!("{}", ir.dot());
         }
         Err(e) => {

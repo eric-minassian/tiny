@@ -2,6 +2,7 @@ use std::{cell::RefCell, collections::HashSet, rc::Rc};
 
 use pretty_assertions_sorted::assert_eq_sorted;
 use tiny::{
+    config::Config,
     ir::{
         block::{BasicBlock, Body, ControlFlowEdge},
         gen::IrBodyGenerator,
@@ -25,10 +26,11 @@ fn simple_assignment() {
     }.
     "#;
     let tokens = Tokenizer::new(input);
-    let computation = Parser::parse(tokens).unwrap();
+    let config = Config::default();
+    let computation = Parser::parse(tokens, &config).unwrap();
 
     let mut const_block = ConstBlock::new();
-    let body = IrBodyGenerator::generate_main(&computation, &mut const_block);
+    let body = IrBodyGenerator::generate_main(&computation, &mut const_block, &config);
 
     // Block 0
     let b0_insr_1 = Rc::new(RefCell::new(Instruction::new(
@@ -113,10 +115,11 @@ fn simple_duplicate_assignment() {
     }.
     "#;
     let tokens = Tokenizer::new(input);
-    let computation = Parser::parse(tokens).unwrap();
+    let config = Config::default();
+    let computation = Parser::parse(tokens, &config).unwrap();
 
     let mut const_block = ConstBlock::new();
-    let body = IrBodyGenerator::generate_main(&computation, &mut const_block);
+    let body = IrBodyGenerator::generate_main(&computation, &mut const_block, &config);
 
     let b0_insr_1 = Rc::new(RefCell::new(Instruction::new(
         1,
@@ -156,10 +159,11 @@ fn identifier_duplicate_assignment() {
     "#;
 
     let tokens = Tokenizer::new(input);
-    let computation = Parser::parse(tokens).unwrap();
+    let config = Config::default();
+    let computation = Parser::parse(tokens, &config).unwrap();
 
     let mut const_body = ConstBlock::new();
-    let body = IrBodyGenerator::generate_main(&computation, &mut const_body);
+    let body = IrBodyGenerator::generate_main(&computation, &mut const_body, &config);
 
     let b0_insr_1 = Rc::new(RefCell::new(Instruction::new(
         1,
@@ -211,10 +215,11 @@ fn simple_branch() {
     "#;
 
     let tokens = Tokenizer::new(input);
-    let computation = Parser::parse(tokens).unwrap();
+    let config = Config::default();
+    let computation = Parser::parse(tokens, &config).unwrap();
 
     let mut const_body = ConstBlock::new();
-    let body = IrBodyGenerator::generate_main(&computation, &mut const_body);
+    let body = IrBodyGenerator::generate_main(&computation, &mut const_body, &config);
 
     // Block 0
     let b0_insr_1 = Rc::new(RefCell::new(Instruction::new(
@@ -321,10 +326,11 @@ fn simple_duplicate_branch() {
     "#;
 
     let tokens = Tokenizer::new(input);
-    let computation = Parser::parse(tokens).unwrap();
+    let config = Config::default();
+    let computation = Parser::parse(tokens, &config).unwrap();
 
     let mut const_body = ConstBlock::new();
-    let body = IrBodyGenerator::generate_main(&computation, &mut const_body);
+    let body = IrBodyGenerator::generate_main(&computation, &mut const_body, &config);
 
     // Block 0
     let b0_insr_1 = Rc::new(RefCell::new(Instruction::new(
@@ -443,10 +449,11 @@ fn new_identifiers_branch() {
     "#;
 
     let tokens = Tokenizer::new(input);
-    let computation = Parser::parse(tokens).unwrap();
+    let config = Config::default();
+    let computation = Parser::parse(tokens, &config).unwrap();
 
     let mut const_body = ConstBlock::new();
-    let body = IrBodyGenerator::generate_main(&computation, &mut const_body);
+    let body = IrBodyGenerator::generate_main(&computation, &mut const_body, &config);
 
     // Block 0
     let b0_insr_1 = Rc::new(RefCell::new(Instruction::new(
@@ -557,10 +564,11 @@ fn branch_without_else_statement() {
     "#;
 
     let tokens = Tokenizer::new(input);
-    let computation = Parser::parse(tokens).unwrap();
+    let config = Config::default();
+    let computation = Parser::parse(tokens, &config).unwrap();
 
     let mut const_body = ConstBlock::new();
-    let body = IrBodyGenerator::generate_main(&computation, &mut const_body);
+    let body = IrBodyGenerator::generate_main(&computation, &mut const_body, &config);
 
     // Block 0
     let b0_insr_1 = Rc::new(RefCell::new(Instruction::new(
@@ -650,10 +658,11 @@ fn nested_if_statements() {
     "#;
 
     let tokens = Tokenizer::new(input);
-    let computation = Parser::parse(tokens).unwrap();
+    let config = Config::default();
+    let computation = Parser::parse(tokens, &config).unwrap();
 
     let mut const_body = ConstBlock::new();
-    let body = IrBodyGenerator::generate_main(&computation, &mut const_body);
+    let body = IrBodyGenerator::generate_main(&computation, &mut const_body, &config);
 
     // Block 0
     let b0_insr_1 = Rc::new(RefCell::new(Instruction::new(
@@ -845,10 +854,11 @@ fn simple_while_loop() {
     "#;
 
     let tokens = Tokenizer::new(input);
-    let computation = Parser::parse(tokens).unwrap();
+    let config = Config::default();
+    let computation = Parser::parse(tokens, &config).unwrap();
 
     let mut const_body = ConstBlock::new();
-    let body = IrBodyGenerator::generate_main(&computation, &mut const_body);
+    let body = IrBodyGenerator::generate_main(&computation, &mut const_body, &config);
 
     // Block 0
     let main_block_identifier_map = InheritingHashMap::from_iter([(1, -1)]);
@@ -966,10 +976,11 @@ fn nested_while_loop() {
     "#;
 
     let tokens = Tokenizer::new(input);
-    let computation = Parser::parse(tokens).unwrap();
+    let config = Config::default();
+    let computation = Parser::parse(tokens, &config).unwrap();
 
     let mut const_body = ConstBlock::new();
-    let body = IrBodyGenerator::generate_main(&computation, &mut const_body);
+    let body = IrBodyGenerator::generate_main(&computation, &mut const_body, &config);
 
     // Block 0
     let main_block_identifier_map = InheritingHashMap::from_iter([(1, 0), (2, 0), (3, 0), (4, 0)]);
@@ -1223,10 +1234,11 @@ fn simple_return() {
     "#;
 
     let tokens = Tokenizer::new(input);
-    let computation = Parser::parse(tokens).unwrap();
+    let config = Config::default();
+    let computation = Parser::parse(tokens, &config).unwrap();
 
     let mut const_body = ConstBlock::new();
-    let body = IrBodyGenerator::generate_func(&computation.funcs[0], &mut const_body);
+    let body = IrBodyGenerator::generate_func(&computation.funcs[0], &mut const_body, &config);
 
     // Block 0
     let b0_insr_1 = Rc::new(RefCell::new(Instruction::new(
@@ -1269,10 +1281,11 @@ fn simple_void_return() {
     "#;
 
     let tokens = Tokenizer::new(input);
-    let computation = Parser::parse(tokens).unwrap();
+    let config = Config::default();
+    let computation = Parser::parse(tokens, &config).unwrap();
 
     let mut const_body = ConstBlock::new();
-    let body = IrBodyGenerator::generate_func(&computation.funcs[0], &mut const_body);
+    let body = IrBodyGenerator::generate_func(&computation.funcs[0], &mut const_body, &config);
 
     // Block 0
     let b0_insr_1 = Rc::new(RefCell::new(Instruction::new(1, Operator::Ret(None), None)));
@@ -1318,10 +1331,11 @@ fn loop_body_return() {
     "#;
 
     let tokens = Tokenizer::new(input);
-    let computation = Parser::parse(tokens).unwrap();
+    let config = Config::default();
+    let computation = Parser::parse(tokens, &config).unwrap();
 
     let mut const_body = ConstBlock::new();
-    let body = IrBodyGenerator::generate_func(&computation.funcs[0], &mut const_body);
+    let body = IrBodyGenerator::generate_func(&computation.funcs[0], &mut const_body, &config);
 
     // Block 0
     let b0_insr_1 = Rc::new(RefCell::new(Instruction::new(1, Operator::Read, None)));
@@ -1440,10 +1454,11 @@ fn single_branch_return() {
     "#;
 
     let tokens = Tokenizer::new(input);
-    let computation = Parser::parse(tokens).unwrap();
+    let config = Config::default();
+    let computation = Parser::parse(tokens, &config).unwrap();
 
     let mut const_body = ConstBlock::new();
-    let body = IrBodyGenerator::generate_func(&computation.funcs[0], &mut const_body);
+    let body = IrBodyGenerator::generate_func(&computation.funcs[0], &mut const_body, &config);
 
     // Block 0
     let b0_insr_1 = Rc::new(RefCell::new(Instruction::new(1, Operator::Read, None)));
@@ -1573,10 +1588,11 @@ fn both_branch_return() {
     "#;
 
     let tokens = Tokenizer::new(input);
-    let computation = Parser::parse(tokens).unwrap();
+    let config = Config::default();
+    let computation = Parser::parse(tokens, &config).unwrap();
 
     let mut const_body = ConstBlock::new();
-    let body = IrBodyGenerator::generate_func(&computation.funcs[0], &mut const_body);
+    let body = IrBodyGenerator::generate_func(&computation.funcs[0], &mut const_body, &config);
 
     // Block 0
     let b0_insr_1 = Rc::new(RefCell::new(Instruction::new(1, Operator::Read, None)));
@@ -1697,10 +1713,11 @@ fn nested_both_branch_return() {
     "#;
 
     let tokens = Tokenizer::new(input);
-    let computation = Parser::parse(tokens).unwrap();
+    let config = Config::default();
+    let computation = Parser::parse(tokens, &config).unwrap();
 
     let mut const_body = ConstBlock::new();
-    let body = IrBodyGenerator::generate_func(&computation.funcs[0], &mut const_body);
+    let body = IrBodyGenerator::generate_func(&computation.funcs[0], &mut const_body, &config);
 
     // Block 0
     let b0_insr_1 = Rc::new(RefCell::new(Instruction::new(1, Operator::Read, None)));
@@ -1946,10 +1963,11 @@ fn simple_predefined_function_call() {
     "#;
 
     let tokens = Tokenizer::new(input);
-    let computation = Parser::parse(tokens).unwrap();
+    let config = Config::default();
+    let computation = Parser::parse(tokens, &config).unwrap();
 
     let mut const_body = ConstBlock::new();
-    let body = IrBodyGenerator::generate_main(&computation, &mut const_body);
+    let body = IrBodyGenerator::generate_main(&computation, &mut const_body, &config);
 
     // Block 0
     let b0_insr_1 = Rc::new(RefCell::new(Instruction::new(1, Operator::Read, None)));
@@ -1994,10 +2012,11 @@ fn simple_user_defined_functions() {
     "#;
 
     let tokens = Tokenizer::new(input);
-    let computation = Parser::parse(tokens).unwrap();
+    let config = Config::default();
+    let computation = Parser::parse(tokens, &config).unwrap();
 
     let mut const_body = ConstBlock::new();
-    let body = IrBodyGenerator::generate_main(&computation, &mut const_body);
+    let body = IrBodyGenerator::generate_main(&computation, &mut const_body, &config);
 
     // Block 0
     let b0_insr_1 = Rc::new(RefCell::new(Instruction::new(
@@ -2066,10 +2085,11 @@ fn void_func_with_return() {
     "#;
 
     let tokens = Tokenizer::new(input);
-    let computation = Parser::parse(tokens).unwrap();
+    let config = Config::default();
+    let computation = Parser::parse(tokens, &config).unwrap();
 
     let mut const_body = ConstBlock::new();
-    let body = IrBodyGenerator::generate_func(&computation.funcs[0], &mut const_body);
+    let body = IrBodyGenerator::generate_func(&computation.funcs[0], &mut const_body, &config);
 
     // Block 0
     let b0_insr_1 = Rc::new(RefCell::new(Instruction::new(
@@ -2113,10 +2133,11 @@ fn undeclared_identifier() {
     "#;
 
     let tokens = Tokenizer::new(input);
-    let computation = Parser::parse(tokens).unwrap();
+    let config = Config::default();
+    let computation = Parser::parse(tokens, &config).unwrap();
 
     let mut const_body = ConstBlock::new();
-    let body = IrBodyGenerator::generate_main(&computation, &mut const_body);
+    let body = IrBodyGenerator::generate_main(&computation, &mut const_body, &config);
 
     // Block 0
     let b0_insr_1 = Rc::new(RefCell::new(Instruction::new(
@@ -2154,10 +2175,11 @@ fn main_return() {
     "#;
 
     let tokens = Tokenizer::new(input);
-    let computation = Parser::parse(tokens).unwrap();
+    let config = Config::default();
+    let computation = Parser::parse(tokens, &config).unwrap();
 
     let mut const_body = ConstBlock::new();
-    let body = IrBodyGenerator::generate_main(&computation, &mut const_body);
+    let body = IrBodyGenerator::generate_main(&computation, &mut const_body, &config);
 
     // Block 0
     let b0_insr_1 = Rc::new(RefCell::new(Instruction::new(1, Operator::End, None)));

@@ -8,30 +8,33 @@ use crate::{
         FuncBody, FuncCall, FuncDecl, IfStatement, PredefinedFuncCall, Relation, ReturnStatement,
         Statement, Term, TermOp, VarDecl, WhileStatement,
     },
+    config::{Config, OptLevel},
     lexer::{error::TokenResult, Identifier, Token, TokenType},
 };
 
 use self::error::{ParserError, ParserResult};
 
-pub struct Parser<T>
+pub struct Parser<'a, T>
 where
     T: Iterator<Item = TokenResult>,
 {
     tokens: Peekable<T>,
+    config: &'a Config,
 }
 
-impl<T> Parser<T>
+impl<'a, T> Parser<'a, T>
 where
     T: Iterator<Item = TokenResult>,
 {
-    fn new(tokens: T) -> Self {
+    fn new(tokens: T, config: &'a Config) -> Self {
         Self {
             tokens: tokens.peekable(),
+            config,
         }
     }
 
-    pub fn parse(tokens: T) -> ParserResult<Computation> {
-        Self::new(tokens).computation()
+    pub fn parse(tokens: T, config: &'a Config) -> ParserResult<Computation> {
+        Self::new(tokens, config).computation()
     }
 
     fn next(&mut self) -> ParserResult<Token> {
@@ -222,11 +225,13 @@ where
         };
 
         // Consume Unreachable Tokens
-        while self
-            .tokens
-            .next_if(|t| !matches!(t, Ok(Token::Fi | Token::Od | Token::Else | Token::RBrack)))
-            .is_some()
-        {}
+        if self.config.opt_level == OptLevel::Full {
+            while self
+                .tokens
+                .next_if(|t| !matches!(t, Ok(Token::Fi | Token::Od | Token::Else | Token::RBrack)))
+                .is_some()
+            {}
+        }
 
         Ok(ReturnStatement { expr })
     }
@@ -266,7 +271,7 @@ where
                 .is_some_and(|s| matches!(s, Statement::ReturnStatement(_)))
         });
 
-        if then_returns && else_returns {
+        if then_returns && else_returns && self.config.opt_level == OptLevel::Full {
             while self
                 .tokens
                 .next_if(|t| !matches!(t, Ok(Token::Fi | Token::Od | Token::Else | Token::RBrack)))
@@ -417,18 +422,20 @@ mod tests {
 
     #[test]
     fn basic_factor() {
+        let config = Config::default();
+
         let input = [Token::Identifier(0)];
-        let mut parser = Parser::new(input.into_iter().map(Ok));
+        let mut parser = Parser::new(input.into_iter().map(Ok), &config);
 
         assert_eq!(parser.factor().unwrap(), Factor::Ident(0));
 
         let input = [Token::Number(42)];
-        let mut parser = Parser::new(input.into_iter().map(Ok));
+        let mut parser = Parser::new(input.into_iter().map(Ok), &config);
 
         assert_eq!(parser.factor().unwrap(), Factor::Number(42));
 
         let input = [Token::LPar, Token::Number(42), Token::RPar];
-        let mut parser = Parser::new(input.into_iter().map(Ok));
+        let mut parser = Parser::new(input.into_iter().map(Ok), &config);
 
         assert_eq!(
             parser.factor().unwrap(),
@@ -442,7 +449,7 @@ mod tests {
         );
 
         let input = [Token::Call, Token::Identifier(0)];
-        let mut parser = Parser::new(input.into_iter().map(Ok));
+        let mut parser = Parser::new(input.into_iter().map(Ok), &config);
 
         assert_eq!(
             parser.factor().unwrap(),
@@ -456,8 +463,10 @@ mod tests {
 
     #[test]
     fn basic_term() {
+        let config = Config::default();
+
         let input = [Token::Number(1), Token::Mul, Token::Number(22)];
-        let mut parser = Parser::new(input.into_iter().map(Ok));
+        let mut parser = Parser::new(input.into_iter().map(Ok), &config);
 
         assert_eq!(
             parser.term().unwrap(),
@@ -468,7 +477,7 @@ mod tests {
         );
 
         let input = [Token::Number(22), Token::Div, Token::Number(1)];
-        let mut parser = Parser::new(input.into_iter().map(Ok));
+        let mut parser = Parser::new(input.into_iter().map(Ok), &config);
 
         assert_eq!(
             parser.term().unwrap(),
@@ -485,7 +494,7 @@ mod tests {
             Token::Div,
             Token::Number(333),
         ];
-        let mut parser = Parser::new(input.into_iter().map(Ok));
+        let mut parser = Parser::new(input.into_iter().map(Ok), &config);
 
         assert_eq!(
             parser.term().unwrap(),
@@ -501,8 +510,10 @@ mod tests {
 
     #[test]
     fn basic_expression() {
+        let config = Config::default();
+
         let input = [Token::Number(1), Token::Add, Token::Number(22)];
-        let mut parser = Parser::new(input.into_iter().map(Ok));
+        let mut parser = Parser::new(input.into_iter().map(Ok), &config);
 
         assert_eq!(
             parser.expression().unwrap(),
@@ -522,7 +533,7 @@ mod tests {
         );
 
         let input = [Token::Number(22), Token::Sub, Token::Number(1)];
-        let mut parser = Parser::new(input.into_iter().map(Ok));
+        let mut parser = Parser::new(input.into_iter().map(Ok), &config);
 
         assert_eq!(
             parser.expression().unwrap(),
@@ -548,7 +559,7 @@ mod tests {
             Token::Sub,
             Token::Number(333),
         ];
-        let mut parser = Parser::new(input.into_iter().map(Ok));
+        let mut parser = Parser::new(input.into_iter().map(Ok), &config);
 
         assert_eq!(
             parser.expression().unwrap(),
@@ -579,8 +590,10 @@ mod tests {
 
     #[test]
     fn basic_relation() {
+        let config = Config::default();
+
         let input = [Token::Number(1), Token::RelOp(RelOp::Eq), Token::Number(22)];
-        let mut parser = Parser::new(input.into_iter().map(Ok));
+        let mut parser = Parser::new(input.into_iter().map(Ok), &config);
 
         assert_eq!(
             parser.relation().unwrap(),
@@ -604,7 +617,7 @@ mod tests {
         );
 
         let input = [Token::Number(22), Token::RelOp(RelOp::Ne), Token::Number(1)];
-        let mut parser = Parser::new(input.into_iter().map(Ok));
+        let mut parser = Parser::new(input.into_iter().map(Ok), &config);
 
         assert_eq!(
             parser.relation().unwrap(),
@@ -628,7 +641,7 @@ mod tests {
         );
 
         let input = [Token::Number(1), Token::RelOp(RelOp::Lt), Token::Number(22)];
-        let mut parser = Parser::new(input.into_iter().map(Ok));
+        let mut parser = Parser::new(input.into_iter().map(Ok), &config);
 
         assert_eq!(
             parser.relation().unwrap(),
@@ -654,13 +667,15 @@ mod tests {
 
     #[test]
     fn basic_assignment() {
+        let config = Config::default();
+
         let input = [
             Token::Let,
             Token::Identifier(0),
             Token::Assignment,
             Token::Number(42),
         ];
-        let mut parser = Parser::new(input.into_iter().map(Ok));
+        let mut parser = Parser::new(input.into_iter().map(Ok), &config);
 
         assert_eq!(
             parser.assignment().unwrap(),
@@ -679,8 +694,10 @@ mod tests {
 
     #[test]
     fn basic_func_call() {
+        let config = Config::default();
+
         let input = [Token::Call, Token::Identifier(0)];
-        let mut parser = Parser::new(input.into_iter().map(Ok));
+        let mut parser = Parser::new(input.into_iter().map(Ok), &config);
 
         assert_eq!(
             parser.func_call().unwrap(),
@@ -692,7 +709,7 @@ mod tests {
         );
 
         let input = [Token::Call, Token::Identifier(0), Token::LPar, Token::RPar];
-        let mut parser = Parser::new(input.into_iter().map(Ok));
+        let mut parser = Parser::new(input.into_iter().map(Ok), &config);
 
         assert_eq!(
             parser.func_call().unwrap(),
@@ -710,7 +727,7 @@ mod tests {
             Token::Number(42),
             Token::RPar,
         ];
-        let mut parser = Parser::new(input.into_iter().map(Ok));
+        let mut parser = Parser::new(input.into_iter().map(Ok), &config);
 
         assert_eq!(
             parser.func_call().unwrap(),
@@ -736,7 +753,7 @@ mod tests {
             Token::Number(22),
             Token::RPar,
         ];
-        let mut parser = Parser::new(input.into_iter().map(Ok));
+        let mut parser = Parser::new(input.into_iter().map(Ok), &config);
 
         assert_eq!(
             parser.func_call().unwrap(),
@@ -765,11 +782,13 @@ mod tests {
 
     #[test]
     fn basic_predefined_func_call() {
+        let config = Config::default();
+
         let input = [
             Token::Call,
             Token::PredefinedFunction(PredefinedFunction::InputNum),
         ];
-        let mut parser = Parser::new(input.into_iter().map(Ok));
+        let mut parser = Parser::new(input.into_iter().map(Ok), &config);
 
         assert_eq!(
             parser.func_call().unwrap(),
@@ -786,7 +805,7 @@ mod tests {
             Token::Number(42),
             Token::RPar,
         ];
-        let mut parser = Parser::new(input.into_iter().map(Ok));
+        let mut parser = Parser::new(input.into_iter().map(Ok), &config);
 
         assert_eq!(
             parser.func_call().unwrap(),
@@ -811,7 +830,7 @@ mod tests {
             Token::Number(22),
             Token::RPar,
         ];
-        let mut parser = Parser::new(input.into_iter().map(Ok));
+        let mut parser = Parser::new(input.into_iter().map(Ok), &config);
 
         assert_eq!(
             parser.func_call().unwrap(),
@@ -839,6 +858,8 @@ mod tests {
 
     #[test]
     fn basic_if_statement() {
+        let config = Config::default();
+
         let tokens = [
             Token::If,
             Token::Number(1),
@@ -857,7 +878,7 @@ mod tests {
             Token::Semicolon,
             Token::Fi,
         ];
-        let mut parser = Parser::new(tokens.into_iter().map(Ok));
+        let mut parser = Parser::new(tokens.into_iter().map(Ok), &config);
 
         assert_eq!(
             parser.if_statement().unwrap(),
@@ -909,6 +930,8 @@ mod tests {
 
     #[test]
     fn basic_if_statement_without_else() {
+        let config = Config::default();
+
         let tokens = [
             Token::If,
             Token::Number(1),
@@ -922,7 +945,7 @@ mod tests {
             Token::Semicolon,
             Token::Fi,
         ];
-        let mut parser = Parser::new(tokens.into_iter().map(Ok));
+        let mut parser = Parser::new(tokens.into_iter().map(Ok), &config);
 
         assert_eq!(
             parser.if_statement().unwrap(),
@@ -963,6 +986,8 @@ mod tests {
 
     #[test]
     fn basic_while_statement() {
+        let config = Config::default();
+
         let tokens = [
             Token::While,
             Token::Number(1),
@@ -975,7 +1000,7 @@ mod tests {
             Token::Number(42),
             Token::Od,
         ];
-        let mut parser = Parser::new(tokens.into_iter().map(Ok));
+        let mut parser = Parser::new(tokens.into_iter().map(Ok), &config);
 
         assert_eq!(
             parser.while_statement().unwrap(),
@@ -1015,8 +1040,10 @@ mod tests {
 
     #[test]
     fn basic_return_statement() {
+        let config = Config::default();
+
         let tokens = [Token::Return, Token::Number(42)];
-        let mut parser = Parser::new(tokens.into_iter().map(Ok));
+        let mut parser = Parser::new(tokens.into_iter().map(Ok), &config);
 
         assert_eq!(
             parser.return_statement().unwrap(),
@@ -1032,7 +1059,7 @@ mod tests {
         );
 
         let tokens = [Token::Return];
-        let mut parser = Parser::new(tokens.into_iter().map(Ok));
+        let mut parser = Parser::new(tokens.into_iter().map(Ok), &config);
 
         assert_eq!(
             parser.return_statement().unwrap(),
@@ -1042,6 +1069,8 @@ mod tests {
 
     #[test]
     fn basic_stat_sequence() {
+        let config = Config::default();
+
         let tokens = [
             Token::Let,
             Token::Identifier(0),
@@ -1052,7 +1081,7 @@ mod tests {
             Token::PredefinedFunction(PredefinedFunction::InputNum),
             Token::Semicolon,
         ];
-        let mut parser = Parser::new(tokens.into_iter().map(Ok));
+        let mut parser = Parser::new(tokens.into_iter().map(Ok), &config);
 
         assert_eq!(
             parser.stat_sequence().unwrap(),
@@ -1079,6 +1108,8 @@ mod tests {
 
     #[test]
     fn unreachable_tokens() {
+        let config = Config::new(OptLevel::Full);
+
         let tokens = [
             Token::Let,
             Token::Identifier(0),
@@ -1095,7 +1126,7 @@ mod tests {
             Token::Semicolon,
         ];
 
-        let mut parser = Parser::new(tokens.into_iter().map(Ok));
+        let mut parser = Parser::new(tokens.clone().into_iter().map(Ok), &config);
 
         assert_eq!(
             parser.stat_sequence().unwrap(),
@@ -1123,10 +1154,53 @@ mod tests {
                 ]
             }
         );
+
+        let config = Config::default();
+
+        let mut parser = Parser::new(tokens.into_iter().map(Ok), &config);
+
+        assert_eq!(
+            parser.stat_sequence().unwrap(),
+            Block {
+                statements: vec![
+                    Statement::Assignment(Assignment {
+                        ident: 0,
+                        expr: Expression {
+                            term: Term {
+                                factor: Factor::Number(22),
+                                ops: Vec::new()
+                            },
+                            ops: Vec::new()
+                        }
+                    }),
+                    Statement::ReturnStatement(ReturnStatement {
+                        expr: Some(Expression {
+                            term: Term {
+                                factor: Factor::Ident(0),
+                                ops: Vec::new()
+                            },
+                            ops: Vec::new()
+                        })
+                    }),
+                    Statement::Assignment(Assignment {
+                        ident: 1,
+                        expr: Expression {
+                            term: Term {
+                                factor: Factor::Number(42),
+                                ops: Vec::new()
+                            },
+                            ops: Vec::new()
+                        }
+                    }),
+                ]
+            }
+        );
     }
 
     #[test]
     fn unreachable_token_no_return_val() {
+        let config = Config::new(OptLevel::Full);
+
         let tokens = [
             Token::Let,
             Token::Identifier(0),
@@ -1142,7 +1216,7 @@ mod tests {
             Token::Semicolon,
         ];
 
-        let mut parser = Parser::new(tokens.into_iter().map(Ok));
+        let mut parser = Parser::new(tokens.clone().into_iter().map(Ok), &config);
 
         assert_eq!(
             parser.stat_sequence().unwrap(),
@@ -1162,10 +1236,45 @@ mod tests {
                 ]
             }
         );
+
+        let config = Config::default();
+
+        let mut parser = Parser::new(tokens.into_iter().map(Ok), &config);
+
+        assert_eq!(
+            parser.stat_sequence().unwrap(),
+            Block {
+                statements: vec![
+                    Statement::Assignment(Assignment {
+                        ident: 0,
+                        expr: Expression {
+                            term: Term {
+                                factor: Factor::Number(22),
+                                ops: Vec::new()
+                            },
+                            ops: Vec::new()
+                        }
+                    }),
+                    Statement::ReturnStatement(ReturnStatement { expr: None }),
+                    Statement::Assignment(Assignment {
+                        ident: 1,
+                        expr: Expression {
+                            term: Term {
+                                factor: Factor::Number(42),
+                                ops: Vec::new()
+                            },
+                            ops: Vec::new()
+                        }
+                    }),
+                ]
+            }
+        );
     }
 
     #[test]
     fn complete_computation() {
+        let config = Config::default();
+
         let tokens = [
             Token::Main,
             Token::Var,
@@ -1233,7 +1342,7 @@ mod tests {
             Token::Period,
         ];
 
-        let mut parser = Parser::new(tokens.into_iter().map(Ok));
+        let mut parser = Parser::new(tokens.into_iter().map(Ok), &config);
 
         assert_eq!(
             parser.computation().unwrap(),

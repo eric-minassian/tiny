@@ -1,6 +1,7 @@
 use pretty_assertions_sorted::assert_eq_sorted;
 use std::{cell::RefCell, collections::HashSet, rc::Rc};
 use tiny::{
+    config::Config,
     ir::{
         block::{BasicBlock, Body, ControlFlowEdge},
         gen::IrGenerator,
@@ -27,9 +28,10 @@ fn commutative_cse() {
     "#;
 
     let tokens = Tokenizer::new(input);
-    let computation = Parser::parse(tokens).unwrap();
+    let config = Config::default();
+    let computation = Parser::parse(tokens, &config).unwrap();
 
-    let ir_store = IrGenerator::generate(&computation);
+    let ir_store = IrGenerator::generate(&computation, &config);
 
     // Block 0
     let b0_insr_1 = Rc::new(RefCell::new(Instruction::new(1, Operator::Read, None)));
@@ -92,9 +94,10 @@ fn commutative_add_constant_prop() {
     "#;
 
     let tokens = Tokenizer::new(input);
-    let computation = Parser::parse(tokens).unwrap();
+    let config = Config::default();
+    let computation = Parser::parse(tokens, &config).unwrap();
 
-    let ir_store = IrGenerator::generate(&computation);
+    let ir_store = IrGenerator::generate(&computation, &config);
 
     // Block 0
     let b0_insr_1 = Rc::new(RefCell::new(Instruction::new(1, Operator::Read, None)));
@@ -152,9 +155,10 @@ fn copy_propagation() {
     "#;
 
     let tokens = Tokenizer::new(input);
-    let computation = Parser::parse(tokens).unwrap();
+    let config = Config::default();
+    let computation = Parser::parse(tokens, &config).unwrap();
 
-    let ir_store = IrGenerator::generate(&computation);
+    let ir_store = IrGenerator::generate(&computation, &config);
 
     // Block 0
     let b0_insr_1 = Rc::new(RefCell::new(Instruction::new(1, Operator::Read, None)));
@@ -293,9 +297,10 @@ fn nested_if_while() {
     "#;
 
     let tokens = Tokenizer::new(input);
-    let computation = Parser::parse(tokens).unwrap();
+    let config = Config::default();
+    let computation = Parser::parse(tokens, &config).unwrap();
 
-    let ir_store = IrGenerator::generate(&computation);
+    let ir_store = IrGenerator::generate(&computation, &config);
 
     // Block 0
     let b0_insr_1 = Rc::new(RefCell::new(Instruction::new(1, Operator::Read, None)));
@@ -686,9 +691,10 @@ fn loop_2x() {
     "#;
 
     let tokens = Tokenizer::new(input);
-    let computation = Parser::parse(tokens).unwrap();
+    let config = Config::default();
+    let computation = Parser::parse(tokens, &config).unwrap();
 
-    let ir_store = IrGenerator::generate(&computation);
+    let ir_store = IrGenerator::generate(&computation, &config);
 
     // Block 0
     let main_block_identifier_map = InheritingHashMap::from_iter([(1, 0)]);
@@ -895,9 +901,10 @@ fn gcd() {
     // gcd = 4
 
     let tokens = Tokenizer::new(input);
-    let computation = Parser::parse(tokens).unwrap();
+    let config = Config::default();
+    let computation = Parser::parse(tokens, &config).unwrap();
 
-    let ir_store = IrGenerator::generate(&computation);
+    let ir_store = IrGenerator::generate(&computation, &config);
 
     // Function mod
     // Block 0

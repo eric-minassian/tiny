@@ -7,6 +7,7 @@ use crate::{
         visit::AstVisitor, Assignment, Computation, DefinedFuncCall, Expression, Factor, FuncCall,
         FuncDecl, IfStatement, PredefinedFuncCall, Relation, ReturnStatement, Term, WhileStatement,
     },
+    config::Config,
     lexer::{Identifier, PredefinedFunction},
     parser::error::{print_warning, Warning},
 };
@@ -20,23 +21,31 @@ use super::{
     ConstBlock, IrStore,
 };
 
-#[derive(Default)]
-pub struct IrGenerator {
+pub struct IrGenerator<'a> {
     bodies: Vec<(String, Body)>,
     const_block: ConstBlock,
+    config: &'a Config,
 }
 
-impl IrGenerator {
+impl<'a> IrGenerator<'a> {
     #[must_use]
-    pub fn generate(ast: &Computation) -> IrStore {
-        let mut generator = Self::default();
+    pub fn generate(ast: &Computation, config: &'a Config) -> IrStore {
+        let mut generator = Self::new(config);
         generator.visit_computation(ast);
 
         IrStore::from(generator.bodies, generator.const_block)
     }
+
+    fn new(config: &'a Config) -> Self {
+        Self {
+            bodies: Vec::new(),
+            const_block: ConstBlock::default(),
+            config,
+        }
+    }
 }
 
-impl AstVisitor for IrGenerator {
+impl AstVisitor for IrGenerator<'_> {
     fn visit_computation(&mut self, computation: &Computation) {
         for func in &computation.funcs {
             self.visit_func_decl(func);
@@ -44,14 +53,14 @@ impl AstVisitor for IrGenerator {
 
         self.bodies.push((
             "main".to_string(),
-            IrBodyGenerator::generate_main(computation, &mut self.const_block),
+            IrBodyGenerator::generate_main(computation, &mut self.const_block, self.config),
         ));
     }
 
     fn visit_func_decl(&mut self, func_decl: &FuncDecl) {
         self.bodies.push((
             func_decl.name.clone(),
-            IrBodyGenerator::generate_func(func_decl, &mut self.const_block),
+            IrBodyGenerator::generate_func(func_decl, &mut self.const_block, self.config),
         ));
     }
 }
@@ -64,30 +73,39 @@ pub struct IrBodyGenerator<'a> {
     is_main: bool,
     declared_identifiers: HashSet<Identifier>,
     prev_val: Option<i32>,
+    config: &'a Config,
 }
 
 impl<'a> IrBodyGenerator<'a> {
-    pub fn generate_main(computation: &Computation, const_block: &'a mut ConstBlock) -> Body {
+    pub fn generate_main(
+        computation: &Computation,
+        const_block: &'a mut ConstBlock,
+        config: &'a Config,
+    ) -> Body {
         let declared_identifiers = computation
             .vars
             .as_ref()
             .map_or_else(HashSet::new, |v| v.vars.iter().copied().collect());
 
-        let mut generator = Self::new(const_block, declared_identifiers, true);
+        let mut generator = Self::new(const_block, declared_identifiers, true, config);
         generator.visit_computation(computation);
         generator.push_end_instr();
 
         generator.body
     }
 
-    pub fn generate_func(func_decl: &FuncDecl, const_block: &'a mut ConstBlock) -> Body {
+    pub fn generate_func(
+        func_decl: &FuncDecl,
+        const_block: &'a mut ConstBlock,
+        config: &'a Config,
+    ) -> Body {
         let declared_identifiers = func_decl
             .body
             .vars
             .as_ref()
             .map_or_else(HashSet::new, |v| v.vars.iter().copied().collect());
 
-        let mut generator = Self::new(const_block, declared_identifiers, false);
+        let mut generator = Self::new(const_block, declared_identifiers, false, config);
         generator.visit_func_decl(func_decl);
         generator.push_end_instr();
 
@@ -98,6 +116,7 @@ impl<'a> IrBodyGenerator<'a> {
         const_block: &'a mut ConstBlock,
         declared_identifiers: HashSet<Identifier>,
         is_main: bool,
+        config: &'a Config,
     ) -> Self {
         let mut body = Body::new();
         let cur_block = body.insert_block(BasicBlock::default());
@@ -110,6 +129,7 @@ impl<'a> IrBodyGenerator<'a> {
             is_main,
             declared_identifiers,
             prev_val: None,
+            config,
         }
     }
 
