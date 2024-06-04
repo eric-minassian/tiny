@@ -2,7 +2,7 @@ use std::{cell::RefCell, collections::HashSet, rc::Rc};
 
 use pretty_assertions_sorted::assert_eq_sorted;
 use tiny::{
-    config::Config,
+    config::{Config, OptLevel},
     ir::{
         block::{BasicBlock, Body, ControlFlowEdge},
         gen::IrBodyGenerator,
@@ -1331,7 +1331,7 @@ fn loop_body_return() {
     "#;
 
     let tokens = Tokenizer::new(input);
-    let config = Config::default();
+    let config = Config::new(OptLevel::Full);
     let computation = Parser::parse(tokens, &config).unwrap();
 
     let mut const_body = ConstBlock::new();
@@ -1588,7 +1588,7 @@ fn both_branch_return() {
     "#;
 
     let tokens = Tokenizer::new(input);
-    let config = Config::default();
+    let config = Config::new(OptLevel::Full);
     let computation = Parser::parse(tokens, &config).unwrap();
 
     let mut const_body = ConstBlock::new();
@@ -1713,7 +1713,7 @@ fn nested_both_branch_return() {
     "#;
 
     let tokens = Tokenizer::new(input);
-    let config = Config::default();
+    let config = Config::new(OptLevel::Full);
     let computation = Parser::parse(tokens, &config).unwrap();
 
     let mut const_body = ConstBlock::new();
