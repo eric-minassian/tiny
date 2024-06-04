@@ -73,7 +73,7 @@ pub struct IrBodyGenerator<'a> {
     is_main: bool,
     declared_identifiers: HashSet<Identifier>,
     prev_val: Option<i32>,
-    config: &'a Config,
+    _config: &'a Config,
 }
 
 impl<'a> IrBodyGenerator<'a> {
@@ -129,7 +129,7 @@ impl<'a> IrBodyGenerator<'a> {
             is_main,
             declared_identifiers,
             prev_val: None,
-            config,
+            _config: config,
         }
     }
 

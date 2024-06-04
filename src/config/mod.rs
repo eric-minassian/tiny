@@ -7,10 +7,12 @@ pub struct Config {
     pub opt_level: OptLevel,
 }
 impl Config {
-    pub fn new(opt_level: OptLevel) -> Self {
+    #[must_use]
+    pub const fn new(opt_level: OptLevel) -> Self {
         Self { opt_level }
     }
 
+    #[must_use]
     pub fn from_env() -> Self {
         let opt_level = std::env::var("TINY_OPT_LEVEL")
             .ok()
@@ -20,9 +22,10 @@ impl Config {
     }
 }
 
-#[derive(Debug, PartialEq, Eq, Clone)]
+#[derive(Debug, Default, PartialEq, Eq, Clone)]
 pub enum OptLevel {
     // None, TODO: Add None optimization level
+    #[default]
     Default,
     Full,
 }
@@ -32,17 +35,11 @@ impl std::str::FromStr for OptLevel {
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         match s.to_lowercase().as_str() {
-            // "0" | "none" => Ok(OptLevel::None),
-            "1" | "default" => Ok(OptLevel::Default),
-            "2" | "full" => Ok(OptLevel::Full),
+            // "0" | "none" => Ok(Self::None),
+            "1" | "default" => Ok(Self::Default),
+            "2" | "full" => Ok(Self::Full),
             _ => Err(ConfigError::InvalidOptLevel(s.to_string())),
         }
-    }
-}
-
-impl Default for OptLevel {
-    fn default() -> Self {
-        OptLevel::Default
     }
 }
 
