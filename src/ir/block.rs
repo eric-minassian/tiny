@@ -3,6 +3,7 @@ use std::{cell::RefCell, rc::Rc};
 use crate::lexer::Identifier;
 
 use super::{
+    dot::{dot_edge, EdgeColor, EdgeLabel, EdgeStyle},
     inheriting_hashmap::InheritingHashMap,
     instruction::{Instruction, Operator, StoredBinaryOpcode},
     InstructionId,
@@ -95,16 +96,20 @@ impl Body {
             dot.push_str("}\"];\n");
 
             match block.edge {
-                Some(ControlFlowEdge::Fallthrough(next)) => {
-                    dot.push_str(&format!(
-                        "\tBB{}_{} -> BB{}_{} [label=\"fall-through\", fontsize=10];\n",
-                        id, name, next.0, name
-                    ));
-                }
+                Some(ControlFlowEdge::Fallthrough(next)) => dot.push_str(&dot_edge(
+                    &format!("BB{}_{}", id, name),
+                    &format!("BB{}_{}", next.0, name),
+                    EdgeLabel::Fallthrough,
+                    EdgeColor::Black,
+                    EdgeStyle::Solid,
+                )),
                 Some(ControlFlowEdge::Branch(next)) => {
-                    dot.push_str(&format!(
-                        "\tBB{}_{} -> BB{}_{} [label=\"branch\", fontsize=10];\n",
-                        id, name, next.0, name
+                    dot.push_str(&dot_edge(
+                        &format!("BB{}_{}", id, name),
+                        &format!("BB{}_{}", next.0, name),
+                        EdgeLabel::Branch,
+                        EdgeColor::Black,
+                        EdgeStyle::Solid,
                     ));
                 }
                 Some(ControlFlowEdge::Leaf) | None => {}
@@ -114,17 +119,23 @@ impl Body {
                 let temp = instr.borrow();
                 let operator = temp.operator();
                 if let Operator::Branch(_, block_index, _) = operator {
-                    dot.push_str(&format!(
-                        "\tBB{}_{} -> BB{}_{} [label=\"branch\", fontsize=10];\n",
-                        id, name, block_index.0, name
+                    dot.push_str(&dot_edge(
+                        &format!("BB{}_{}", id, name),
+                        &format!("BB{}_{}", block_index.0, name),
+                        EdgeLabel::Branch,
+                        EdgeColor::Black,
+                        EdgeStyle::Solid,
                     ));
                 }
             }
 
             if let Some(dominator) = block.dominator {
-                dot.push_str(&format!(
-                    "\tBB{}_{} -> BB{}_{} [style=dotted, color=blue, fontsize=10, label=\"dom\"];\n",
-                    dominator.0, name,  id, name
+                dot.push_str(&dot_edge(
+                    &format!("BB{}_{}", dominator.0, name),
+                    &format!("BB{}_{}", id, name),
+                    EdgeLabel::Dom,
+                    EdgeColor::Blue,
+                    EdgeStyle::Dotted,
                 ));
             }
         }

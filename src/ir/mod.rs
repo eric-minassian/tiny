@@ -1,9 +1,12 @@
 pub mod block;
+mod dot;
 pub mod gen;
 pub mod inheriting_hashmap;
 pub mod instruction;
 
 use std::collections::HashSet;
+
+use dot::{dot_edge, EdgeColor, EdgeLabel, EdgeStyle};
 
 use crate::lexer::Number;
 
@@ -33,15 +36,30 @@ impl IrStore {
     pub fn dot(&self) -> String {
         let mut dot = String::new();
 
-        dot.push_str("digraph input {\n");
+        dot.push_str("digraph ir {\n");
+
+        dot.push_str(self.const_block.dot().as_str());
 
         for (name, body) in &self.bodies {
             dot.push_str(body.dot(name).as_str());
         }
 
-        dot.push_str(self.const_block.dot().as_str());
         for (name, _) in &self.bodies {
-            dot.push_str(format!("const_block -> BB0_{};\n", name).as_str());
+            let to = format!("BB0_{}", name);
+            dot.push_str(&dot_edge(
+                "const_block",
+                &to,
+                EdgeLabel::Branch,
+                EdgeColor::Black,
+                EdgeStyle::Solid,
+            ));
+            dot.push_str(&dot_edge(
+                "const_block",
+                &to,
+                EdgeLabel::Dom,
+                EdgeColor::Blue,
+                EdgeStyle::Dotted,
+            ));
         }
 
         dot.push_str("}\n");
