@@ -39,10 +39,8 @@ impl IrStore {
             dot.push_str(body.dot(name).as_str());
         }
 
-        dot.push_str(self.const_block.dot().as_str());
-        for (name, _) in &self.bodies {
-            dot.push_str(format!("const_block -> BB0_{};\n", name).as_str());
-        }
+        let bodies_iter = self.bodies.iter().map(|(name, _)| name.as_str());
+        dot.push_str(self.const_block.dot(bodies_iter).as_str());
 
         dot.push_str("}\n");
 
@@ -73,7 +71,10 @@ impl ConstBlock {
     }
 
     #[must_use]
-    pub fn dot(&self) -> String {
+    pub fn dot<'a, T>(&self, bodies: T) -> String
+    where
+        T: Iterator<Item = &'a str>,
+    {
         let mut dot = String::new();
 
         dot.push_str("subgraph const_block {\n\tconst_block [shape=record, width=3.0, height=1.0, label=\"Const | {");
@@ -97,7 +98,20 @@ impl ConstBlock {
             dot.push_str("empty");
         }
 
-        dot.push_str("}\"];\n}\n");
+        dot.push_str("}\"];\n");
+
+        for body in bodies {
+            dot.push_str(
+                format!(
+                    "\tconst_block -> BB0_{} [label=\"fall-through\", fontsize=10];\n",
+                    body
+                )
+                .as_str(),
+            );
+            dot.push_str(format!("\tconst_block -> BB0_{} [label=\"dom\", color=blue, style=dotted, fontsize=10, fontcolor=blue];\n", body).as_str());
+        }
+
+        dot.push_str("}\n");
 
         dot
     }

@@ -123,7 +123,7 @@ impl Body {
 
             if let Some(dominator) = block.dominator {
                 dot.push_str(&format!(
-                    "\tBB{}_{} -> BB{}_{} [style=dotted, color=blue, fontsize=10, label=\"dom\"];\n",
+                    "\tBB{}_{} -> BB{}_{} [style=dotted, color=blue, fontsize=10, label=\"dom\", fontcolor=blue];\n",
                     dominator.0, name,  id, name
                 ));
             }
