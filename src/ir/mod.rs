@@ -96,7 +96,9 @@ impl ConstBlock {
 
         dot.push_str("subgraph const_block {\n\tconst_block [shape=record, width=3.0, height=1.0, label=\"Const | {");
 
-        for (i, constant) in self.constants.iter().enumerate() {
+        let mut constants = self.constants.iter().collect::<Vec<_>>();
+        constants.sort_unstable();
+        for (i, constant) in constants.into_iter().rev().enumerate() {
             dot.push_str(
                 format!(
                     "{}: const# {}",
