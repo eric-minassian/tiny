@@ -1,0 +1,14 @@
+main
+
+var x;
+
+void function printone(); 
+var n;
+{
+    let n <- 69;
+    call OutputNum(n)
+};
+
+{
+    call printone
+}.

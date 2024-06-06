@@ -1,0 +1,47 @@
+main
+var a, six, g, red;
+
+
+function retfunc(x);
+var x;
+{
+    return x;
+};
+
+void function emptyfunc();
+var trippy, ball, count;
+{
+    let trippy <- 25;
+    if 10 > 3 then
+        let trippy <- 40;
+        let ball <- 30;
+    else
+        let ball <- 4;
+    fi;
+
+    let count <- 0;
+    while count <= 5 do
+        let count <- count + 1;
+    od;
+    
+    let count <- 0;
+    while count <= 5 do
+        let count <- count + 1;
+    od
+};
+
+
+
+
+{
+let red <- 12;
+
+call emptyfunc();
+
+let a <- 900;
+
+let six <- call retfunc(9);
+
+let g <- call retfunc(9 + 9);
+}
+.

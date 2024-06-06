@@ -1,0 +1,24 @@
+main
+var red, a, six, g;
+function retfunc(x);
+var x;
+{
+
+    return x + x;
+};
+
+{
+let red <- 12;
+
+
+
+let a <- 900;
+
+let six <- call retfunc(9);
+
+let g <- call retfunc(9 + 9);
+
+
+
+}
+.

@@ -1,0 +1,10 @@
+main
+var x; {
+    let x <- call InputNum();
+    if x == 1 then
+        let x <- 1
+    else
+        let x <- 2
+    fi;
+    call OutputNum(x)
+}.
