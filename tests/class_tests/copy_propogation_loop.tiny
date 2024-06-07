@@ -1,0 +1,18 @@
+main
+var fa, fb, n, t;
+{
+    let fa <- 0;
+    let fb <- 1;
+    let t <- fa + fb;
+    let n <- call InputNum();
+    let t <- n - 1;
+    while n > 0 do
+        let t <- fb;
+        let fb <- fa + fb;
+        let fa <- t;
+        let n <- n - 1;
+    od;
+    call OutputNum(fa);
+    call OutputNewLine();
+}
+.

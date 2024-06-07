@@ -1,0 +1,36 @@
+digraph ir {
+subgraph cluster_main {
+	node [shape=record];
+	label="Function main";
+	rankdir=TB;
+	ranksep=1.0;
+	nodesep=0.5;
+
+	BB0_main [width=3.0, height=1.0, label="BB0 | {1: read}"];
+	BB0_main -> BB1_main [label="fall-through", fontsize=10];
+	BB1_main [width=3.0, height=1.0, label="BB1 | {2: phi 0 10 | 3: phi 0 11 | 4: phi 1 8 | 5: phi 1 12 | 6: cmp 2 -10 | 7: bge BB6 6}"];
+	BB1_main -> BB2_main [label="fall-through", fontsize=10];
+	BB1_main -> BB6_main [label="branch", fontsize=10];
+	BB0_main -> BB1_main [style=dotted, color=blue, fontsize=10, label="dom", fontcolor=blue];
+	BB2_main [width=3.0, height=1.0, label="BB2 | {8: add 4 -1 | 9: add 5 -1}"];
+	BB2_main -> BB3_main [label="fall-through", fontsize=10];
+	BB1_main -> BB2_main [style=dotted, color=blue, fontsize=10, label="dom", fontcolor=blue];
+	BB3_main [width=3.0, height=1.0, label="BB3 | {10: phi 8 15 | 11: phi 9 8 | 12: phi 5 15 | 13: cmp 12 -10 | 14: bge BB5 13}"];
+	BB3_main -> BB4_main [label="fall-through", fontsize=10];
+	BB3_main -> BB5_main [label="branch", fontsize=10];
+	BB2_main -> BB3_main [style=dotted, color=blue, fontsize=10, label="dom", fontcolor=blue];
+	BB4_main [width=3.0, height=1.0, label="BB4 | {15: add 12 -1 | 16: bra BB3}"];
+	BB4_main -> BB3_main [label="branch", fontsize=10];
+	BB3_main -> BB4_main [style=dotted, color=blue, fontsize=10, label="dom", fontcolor=blue];
+	BB5_main [width=3.0, height=1.0, label="BB5 | {17: bra BB1}"];
+	BB5_main -> BB1_main [label="branch", fontsize=10];
+	BB3_main -> BB5_main [style=dotted, color=blue, fontsize=10, label="dom", fontcolor=blue];
+	BB6_main [width=3.0, height=1.0, label="BB6 | {18: write 2 | 19: end}"];
+	BB1_main -> BB6_main [style=dotted, color=blue, fontsize=10, label="dom", fontcolor=blue];
+}
+subgraph const_block {
+	const_block [shape=record, width=3.0, height=1.0, label="Const | {-10: const# 10 | -1: const# 1 | 0: const# 0}"];
+	const_block -> BB0_main [label="fall-through", fontsize=10];
+	const_block -> BB0_main [label="dom", color=blue, style=dotted, fontsize=10, fontcolor=blue];
+}
+}
