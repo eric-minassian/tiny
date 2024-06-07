@@ -1,0 +1,6 @@
+main
+var x, y; {
+    let x <- 1;
+    let y <- 1;
+    let x <- x + y
+}.

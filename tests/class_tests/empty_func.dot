@@ -1,0 +1,27 @@
+digraph ir {
+subgraph cluster_3 {
+	node [shape=record];
+	label="Function 3";
+	rankdir=TB;
+	ranksep=1.0;
+	nodesep=0.5;
+
+	BB0_3 [width=3.0, height=1.0, label="BB0 | {1: ret void}"];
+}
+subgraph cluster_main {
+	node [shape=record];
+	label="Function main";
+	rankdir=TB;
+	ranksep=1.0;
+	nodesep=0.5;
+
+	BB0_main [width=3.0, height=1.0, label="BB0 | {1: add -23 -3 | 2: jsr func#3 | 3: write -23 | 4: end}"];
+}
+subgraph const_block {
+	const_block [shape=record, width=3.0, height=1.0, label="Const | {-23: const# 23 | -3: const# 3 | 0: const# 0}"];
+	const_block -> BB0_3 [label="fall-through", fontsize=10];
+	const_block -> BB0_3 [label="dom", color=blue, style=dotted, fontsize=10, fontcolor=blue];
+	const_block -> BB0_main [label="fall-through", fontsize=10];
+	const_block -> BB0_main [label="dom", color=blue, style=dotted, fontsize=10, fontcolor=blue];
+}
+}

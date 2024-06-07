@@ -1,0 +1,13 @@
+main
+var a, b;
+void function empty();
+var c; 
+{
+    let c <- 0;
+};
+{
+    let a <- 23;
+    let b <- a + 3;
+    call empty;
+    call OutputNum(a)
+}.
