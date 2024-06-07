@@ -1,0 +1,24 @@
+main
+var a, b, sum, i, j; {
+    let a <- call InputNum();
+    let b <- call InputNum();
+    let sum <- 0;
+    let i <- 1;
+    while i <= a do
+        let j <- 1;
+        while j <= b do
+            if i * j == 3 then
+                let sum <- sum + i * j;
+            fi;
+            if i * j == 6 then
+                let sum <- sum + i * j;
+            fi;
+            if i * j == 9 then
+                let sum <- sum + i * j;
+            fi;
+            let j <- j + 1;
+        od;
+        let i <- i + 1;
+    od;
+    call OutputNum(sum);
+}.
