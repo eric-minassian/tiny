@@ -1,0 +1,49 @@
+main
+var a, b, c, d, e, f, g, h; {
+    let a <- call InputNum();
+    let b <- call InputNum();
+    let c <- a + b;
+    let d <- a - b;
+    let e <- a * b;
+    if b != 0 then
+        let f <- a / b;
+    else
+        let f <- 0;
+    fi;
+    let g <- 0;
+    let h <- 0;
+
+    while g < 5 do
+        let g <- g + 1;
+        if g < 3 then
+            let h <- h + g;
+        else
+            let h <- h - g;
+        fi;
+    od;
+
+    let a <- c;
+    let b <- d;
+    let c <- e;
+
+    while a < 10 do
+        let a <- a + 1;
+        if b > 5 then
+            while h < 15 do
+                let h <- h + 1;
+            od;
+            let b <- 0;
+        else
+            let b <- b + 1;
+            while g < 20 do
+                let g <- g + 2;
+            od;
+        fi;
+    od;
+
+    call OutputNum(a);
+    call OutputNum(b);
+    call OutputNum(c);
+    call OutputNum(d);
+    call OutputNum(e);
+}.
