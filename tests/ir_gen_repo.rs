@@ -336,7 +336,7 @@ fn nested_if_while() {
     )));
     let b1_insr_6 = Rc::new(RefCell::new(Instruction::new(
         8,
-        Operator::Branch(BranchOpcode::Ge, 12.into(), 7),
+        Operator::Branch(BranchOpcode::Ge, 11.into(), 7),
         None,
     )));
 
@@ -378,7 +378,7 @@ fn nested_if_while() {
     )));
     let b2_insr_3 = Rc::new(RefCell::new(Instruction::new(
         11,
-        Operator::Branch(BranchOpcode::Le, 7.into(), 10),
+        Operator::Branch(BranchOpcode::Le, 6.into(), 10),
         None,
     )));
 
@@ -401,20 +401,6 @@ fn nested_if_while() {
     );
 
     // Block 3
-    let then_block_identifier_map =
-        InheritingHashMap::with_dominator(branch_block.get_identifier_map());
-    let then_block_dom_instr_map =
-        InheritingHashMap::with_dominator(branch_block.get_dom_instr_map());
-
-    let then_block = BasicBlock::from(
-        vec![],
-        then_block_identifier_map,
-        Some(ControlFlowEdge::Fallthrough(4.into())),
-        Some(2.into()),
-        then_block_dom_instr_map,
-    );
-
-    // Block 4
     let b4_insr_1 = Rc::new(RefCell::new(Instruction::new(
         12,
         Operator::Phi(0, 15),
@@ -427,26 +413,26 @@ fn nested_if_while() {
     )));
     let b4_insr_3 = Rc::new(RefCell::new(Instruction::new(
         14,
-        Operator::Branch(BranchOpcode::Ge, 6.into(), 13),
+        Operator::Branch(BranchOpcode::Ge, 5.into(), 13),
         None,
     )));
 
     let mut then_join_block_identifier_map =
-        InheritingHashMap::with_dominator(then_block.get_identifier_map());
+        InheritingHashMap::with_dominator(branch_block.get_identifier_map());
     then_join_block_identifier_map.insert(3, 12);
     let mut then_join_block_dom_instr_map =
-        InheritingHashMap::with_dominator(then_block.get_dom_instr_map());
+        InheritingHashMap::with_dominator(branch_block.get_dom_instr_map());
     then_join_block_dom_instr_map.insert(StoredBinaryOpcode::Cmp, b4_insr_2.clone());
 
     let then_join_block = BasicBlock::from(
         vec![b4_insr_1, b4_insr_2, b4_insr_3],
         then_join_block_identifier_map,
-        Some(ControlFlowEdge::Fallthrough(5.into())),
-        Some(3.into()),
+        Some(ControlFlowEdge::Fallthrough(4.into())),
+        Some(2.into()),
         then_join_block_dom_instr_map,
     );
 
-    // Block 5
+    // Block 4
     let b5_insr_1 = Rc::new(RefCell::new(Instruction::new(
         15,
         Operator::StoredBinaryOp(StoredBinaryOpcode::Add, 12, -1),
@@ -454,7 +440,7 @@ fn nested_if_while() {
     )));
     let b5_insr_2 = Rc::new(RefCell::new(Instruction::new(
         16,
-        Operator::UnconditionalBranch(4.into()),
+        Operator::UnconditionalBranch(3.into()),
         None,
     )));
 
@@ -468,15 +454,15 @@ fn nested_if_while() {
     let then_loop_block = BasicBlock::from(
         vec![b5_insr_1, b5_insr_2],
         then_loop_block_identifier_map,
-        Some(ControlFlowEdge::Branch(4.into())),
-        Some(4.into()),
+        Some(ControlFlowEdge::Branch(3.into())),
+        Some(3.into()),
         then_loop_block_dom_instr_map,
     );
 
-    // Block 6
+    // Block 5
     let b6_insr_1 = Rc::new(RefCell::new(Instruction::new(
         17,
-        Operator::UnconditionalBranch(11.into()),
+        Operator::UnconditionalBranch(10.into()),
         None,
     )));
 
@@ -489,12 +475,12 @@ fn nested_if_while() {
     let then_end_block = BasicBlock::from(
         vec![b6_insr_1],
         then_end_block_identifier_map,
-        Some(ControlFlowEdge::Branch(11.into())),
-        Some(4.into()),
+        Some(ControlFlowEdge::Branch(10.into())),
+        Some(3.into()),
         then_end_block_dom_instr_map,
     );
 
-    // Block 7
+    // Block 6
     let b7_insr_1 = Rc::new(RefCell::new(Instruction::new(
         18,
         Operator::StoredBinaryOp(StoredBinaryOpcode::Add, 4, -1),
@@ -511,12 +497,12 @@ fn nested_if_while() {
     let else_block = BasicBlock::from(
         vec![b7_insr_1],
         else_block_identifier_map,
-        Some(ControlFlowEdge::Fallthrough(8.into())),
+        Some(ControlFlowEdge::Fallthrough(7.into())),
         Some(2.into()),
         else_block_dom_instr_map,
     );
 
-    // Block 8
+    // Block 7
     let b8_insr_1 = Rc::new(RefCell::new(Instruction::new(
         19,
         Operator::Phi(0, 22),
@@ -529,7 +515,7 @@ fn nested_if_while() {
     )));
     let b8_insr_3 = Rc::new(RefCell::new(Instruction::new(
         21,
-        Operator::Branch(BranchOpcode::Ge, 10.into(), 20),
+        Operator::Branch(BranchOpcode::Ge, 9.into(), 20),
         None,
     )));
 
@@ -543,12 +529,12 @@ fn nested_if_while() {
     let else_join_block = BasicBlock::from(
         vec![b8_insr_1, b8_insr_2, b8_insr_3],
         else_join_block_identifier_map,
-        Some(ControlFlowEdge::Fallthrough(9.into())),
-        Some(7.into()),
+        Some(ControlFlowEdge::Fallthrough(8.into())),
+        Some(6.into()),
         else_join_block_dom_instr_map,
     );
 
-    // Block 9
+    // Block 8
     let b9_insr_1 = Rc::new(RefCell::new(Instruction::new(
         22,
         Operator::StoredBinaryOp(StoredBinaryOpcode::Mul, 19, -2),
@@ -556,7 +542,7 @@ fn nested_if_while() {
     )));
     let b9_insr_2 = Rc::new(RefCell::new(Instruction::new(
         23,
-        Operator::UnconditionalBranch(8.into()),
+        Operator::UnconditionalBranch(7.into()),
         None,
     )));
 
@@ -570,12 +556,12 @@ fn nested_if_while() {
     let else_loop_block = BasicBlock::from(
         vec![b9_insr_1, b9_insr_2],
         else_loop_block_identifier_map,
-        Some(ControlFlowEdge::Branch(8.into())),
-        Some(8.into()),
+        Some(ControlFlowEdge::Branch(7.into())),
+        Some(7.into()),
         else_loop_block_dom_instr_map,
     );
 
-    // Block 10
+    // Block 9
     let else_end_block_identifier_map =
         InheritingHashMap::with_dominator(else_join_block.get_identifier_map());
     let else_end_block_dom_instr_map =
@@ -584,12 +570,12 @@ fn nested_if_while() {
     let else_end_block = BasicBlock::from(
         vec![],
         else_end_block_identifier_map,
-        Some(ControlFlowEdge::Fallthrough(11.into())),
-        Some(8.into()),
+        Some(ControlFlowEdge::Fallthrough(10.into())),
+        Some(7.into()),
         else_end_block_dom_instr_map,
     );
 
-    // Block 11
+    // Block 10
     let b11_insr_1 = Rc::new(RefCell::new(Instruction::new(
         24,
         Operator::Phi(0, 18),
@@ -627,7 +613,7 @@ fn nested_if_while() {
         loop_end_block_dom_instr_map,
     );
 
-    // Block 12
+    // Block 11
     let b12_insr_1 = Rc::new(RefCell::new(Instruction::new(28, Operator::Write(3), None)));
     let b12_insr_2 = Rc::new(RefCell::new(Instruction::new(29, Operator::Write(4), None)));
     let b12_insr_3 = Rc::new(RefCell::new(Instruction::new(30, Operator::End, None)));
@@ -648,7 +634,6 @@ fn nested_if_while() {
         initial_block,
         join_block,
         branch_block,
-        then_block,
         then_join_block,
         then_loop_block,
         then_end_block,
@@ -664,8 +649,6 @@ fn nested_if_while() {
     let expected_ir = IrStore::from(Vec::from([("main".to_string(), main_body)]), const_block);
 
     assert_eq_sorted!(ir_store, expected_ir);
-
-    // panic!("{:#?}", ir_store);
 }
 
 #[test]
@@ -859,7 +842,6 @@ fn loop_2x() {
     assert_eq_sorted!(ir_store, expected_ir);
 }
 
-// @TODO: Fold Empty Blocks Into While Join Blocks
 #[test]
 fn gcd() {
     let input = r#"
@@ -888,11 +870,6 @@ fn gcd() {
     }
     .
     "#;
-
-    // mod = 1
-    // x = 2
-    // y = 3
-    // gcd = 4
 
     let tokens = Tokenizer::new(input);
     let computation = Parser::parse(tokens).unwrap();
@@ -960,56 +937,42 @@ fn gcd() {
     );
 
     // Block 2
-    let mod_branch_join_block_identifier_map =
-        InheritingHashMap::with_dominator(mod_main_block.get_identifier_map());
-    let mod_branch_join_block_dom_instr_map =
-        InheritingHashMap::with_dominator(mod_main_block.get_dom_instr_map());
-
-    let mod_branch_join_block = BasicBlock::from(
-        vec![],
-        mod_branch_join_block_identifier_map,
-        Some(ControlFlowEdge::Fallthrough(3.into())),
-        Some(0.into()),
-        mod_branch_join_block_dom_instr_map,
-    );
-
-    // Block 3
-    let mod_b3_insr_1 = Rc::new(RefCell::new(Instruction::new(6, Operator::Phi(1, 9), None)));
-    let mod_b3_insr_2 = Rc::new(RefCell::new(Instruction::new(
+    let mod_b2_insr_1 = Rc::new(RefCell::new(Instruction::new(6, Operator::Phi(1, 9), None)));
+    let mod_b2_insr_2 = Rc::new(RefCell::new(Instruction::new(
         7,
         Operator::StoredBinaryOp(StoredBinaryOpcode::Cmp, 6, 0),
         Some(mod_b0_insr_3.clone()),
     )));
-    let mod_b3_insr_3 = Rc::new(RefCell::new(Instruction::new(
+    let mod_b2_insr_3 = Rc::new(RefCell::new(Instruction::new(
         8,
-        Operator::Branch(BranchOpcode::Ge, 5.into(), 7),
+        Operator::Branch(BranchOpcode::Ge, 4.into(), 7),
         None,
     )));
 
     let mut mod_loop_join_block_identifier_map =
-        InheritingHashMap::with_dominator(mod_branch_join_block.get_identifier_map());
+        InheritingHashMap::with_dominator(mod_main_block.get_identifier_map());
     mod_loop_join_block_identifier_map.insert(2, 6);
     let mut mod_loop_join_block_dom_instr_map =
-        InheritingHashMap::with_dominator(mod_branch_join_block.get_dom_instr_map());
-    mod_loop_join_block_dom_instr_map.insert(StoredBinaryOpcode::Cmp, mod_b3_insr_2.clone());
+        InheritingHashMap::with_dominator(mod_main_block.get_dom_instr_map());
+    mod_loop_join_block_dom_instr_map.insert(StoredBinaryOpcode::Cmp, mod_b2_insr_2.clone());
 
     let mod_loop_join_block = BasicBlock::from(
-        vec![mod_b3_insr_1, mod_b3_insr_2.clone(), mod_b3_insr_3],
+        vec![mod_b2_insr_1, mod_b2_insr_2.clone(), mod_b2_insr_3],
         mod_loop_join_block_identifier_map,
-        Some(ControlFlowEdge::Fallthrough(4.into())),
-        Some(2.into()),
+        Some(ControlFlowEdge::Fallthrough(3.into())),
+        Some(0.into()),
         mod_loop_join_block_dom_instr_map,
     );
 
-    // Block 4
-    let mod_b4_insr_1 = Rc::new(RefCell::new(Instruction::new(
+    // Block 3
+    let mod_b3_insr_1 = Rc::new(RefCell::new(Instruction::new(
         9,
         Operator::StoredBinaryOp(StoredBinaryOpcode::Add, 6, 2),
         None,
     )));
-    let mod_b4_insr_2 = Rc::new(RefCell::new(Instruction::new(
+    let mod_b3_insr_2 = Rc::new(RefCell::new(Instruction::new(
         10,
-        Operator::UnconditionalBranch(3.into()),
+        Operator::UnconditionalBranch(2.into()),
         None,
     )));
 
@@ -1018,71 +981,57 @@ fn gcd() {
     mod_loop_block_identifier_map.insert(2, 9);
     let mut mod_loop_block_dom_instr_map =
         InheritingHashMap::with_dominator(mod_loop_join_block.get_dom_instr_map());
-    mod_loop_block_dom_instr_map.insert(StoredBinaryOpcode::Add, mod_b4_insr_1.clone());
+    mod_loop_block_dom_instr_map.insert(StoredBinaryOpcode::Add, mod_b3_insr_1.clone());
 
     let mod_loop_block = BasicBlock::from(
-        vec![mod_b4_insr_1, mod_b4_insr_2],
+        vec![mod_b3_insr_1, mod_b3_insr_2],
         mod_loop_block_identifier_map,
-        Some(ControlFlowEdge::Branch(3.into())),
-        Some(3.into()),
+        Some(ControlFlowEdge::Branch(2.into())),
+        Some(2.into()),
         mod_loop_block_dom_instr_map,
     );
 
-    // Block 5
-    let mod_loop_end_block_identifier_map =
-        InheritingHashMap::with_dominator(mod_loop_join_block.get_identifier_map());
-    let mod_loop_end_block_dom_instr_map =
-        InheritingHashMap::with_dominator(mod_loop_join_block.get_dom_instr_map());
-
-    let mod_loop_end_block = BasicBlock::from(
-        vec![],
-        mod_loop_end_block_identifier_map,
-        Some(ControlFlowEdge::Fallthrough(6.into())),
-        Some(3.into()),
-        mod_loop_end_block_dom_instr_map,
-    );
-
-    // Block 6
-    let mod_b6_insr_1 = Rc::new(RefCell::new(Instruction::new(
+    // Block 4
+    let mod_b4_insr_1 = Rc::new(RefCell::new(Instruction::new(
         11,
         Operator::Phi(6, 14),
         None,
     )));
-    let mod_b6_insr_2 = Rc::new(RefCell::new(Instruction::new(
+    let mod_b4_insr_2 = Rc::new(RefCell::new(Instruction::new(
         12,
         Operator::StoredBinaryOp(StoredBinaryOpcode::Cmp, 11, 2),
-        Some(mod_b3_insr_2.clone()),
+        Some(mod_b2_insr_2.clone()),
     )));
-    let mod_b6_insr_3 = Rc::new(RefCell::new(Instruction::new(
+    let mod_b4_insr_3 = Rc::new(RefCell::new(Instruction::new(
         13,
-        Operator::Branch(BranchOpcode::Lt, 8.into(), 12),
+        Operator::Branch(BranchOpcode::Lt, 6.into(), 12),
         None,
     )));
 
     let mut mod_loop2_join_block_identifier_map =
-        InheritingHashMap::with_dominator(mod_loop_end_block.get_identifier_map());
+        InheritingHashMap::with_dominator(mod_loop_join_block.get_identifier_map());
     mod_loop2_join_block_identifier_map.insert(2, 11);
     let mut mod_loop2_join_block_dom_instr_map =
-        InheritingHashMap::with_dominator(mod_loop_end_block.get_dom_instr_map());
-    mod_loop2_join_block_dom_instr_map.insert(StoredBinaryOpcode::Cmp, mod_b6_insr_2.clone());
+        InheritingHashMap::with_dominator(mod_loop_join_block.get_dom_instr_map());
+    mod_loop2_join_block_dom_instr_map.insert(StoredBinaryOpcode::Cmp, mod_b4_insr_2.clone());
 
     let mod_loop2_join_block = BasicBlock::from(
-        vec![mod_b6_insr_1, mod_b6_insr_2.clone(), mod_b6_insr_3],
+        vec![mod_b4_insr_1, mod_b4_insr_2.clone(), mod_b4_insr_3],
         mod_loop2_join_block_identifier_map,
-        Some(ControlFlowEdge::Fallthrough(7.into())),
-        Some(5.into()),
+        Some(ControlFlowEdge::Fallthrough(5.into())),
+        Some(2.into()),
         mod_loop2_join_block_dom_instr_map,
     );
 
-    // Block 7
-    let mod_b7_insr_1 = Rc::new(RefCell::new(Instruction::new(
+    // Block 5
+    let mod_b5_insr_1 = Rc::new(RefCell::new(Instruction::new(
         14,
         Operator::StoredBinaryOp(StoredBinaryOpcode::Sub, 11, 2),
         None,
     )));
-    let mod_b7_insr_2 = Rc::new(RefCell::new(Instruction::new(
+    let mod_b5_insr_2 = Rc::new(RefCell::new(Instruction::new(
         15,
-        Operator::UnconditionalBranch(6.into()),
+        Operator::UnconditionalBranch(4.into()),
         None,
     )));
 
@@ -1091,18 +1040,18 @@ fn gcd() {
     mod_loop2_block_identifier_map.insert(2, 14);
     let mut mod_loop2_block_dom_instr_map =
         InheritingHashMap::with_dominator(mod_loop2_join_block.get_dom_instr_map());
-    mod_loop2_block_dom_instr_map.insert(StoredBinaryOpcode::Sub, mod_b7_insr_1.clone());
+    mod_loop2_block_dom_instr_map.insert(StoredBinaryOpcode::Sub, mod_b5_insr_1.clone());
 
     let mod_loop2_block = BasicBlock::from(
-        vec![mod_b7_insr_1, mod_b7_insr_2],
+        vec![mod_b5_insr_1, mod_b5_insr_2],
         mod_loop2_block_identifier_map,
-        Some(ControlFlowEdge::Branch(6.into())),
-        Some(6.into()),
+        Some(ControlFlowEdge::Branch(4.into())),
+        Some(4.into()),
         mod_loop2_block_dom_instr_map,
     );
 
-    // Block 8
-    let b8_insr_1 = Rc::new(RefCell::new(Instruction::new(
+    // Block 6
+    let b6_insr_1 = Rc::new(RefCell::new(Instruction::new(
         16,
         Operator::Ret(Some(11)),
         None,
@@ -1114,20 +1063,18 @@ fn gcd() {
         InheritingHashMap::with_dominator(mod_loop2_join_block.get_dom_instr_map());
 
     let mod_loop2_end_block = BasicBlock::from(
-        vec![b8_insr_1],
+        vec![b6_insr_1],
         mod_loop2_end_block_identifier_map,
         Some(ControlFlowEdge::Leaf),
-        Some(6.into()),
+        Some(4.into()),
         mod_loop2_end_block_dom_instr_map,
     );
 
     let mod_body = Body::from(vec![
         mod_main_block,
         mod_then_block,
-        mod_branch_join_block,
         mod_loop_join_block,
         mod_loop_block,
-        mod_loop_end_block,
         mod_loop2_join_block,
         mod_loop2_block,
         mod_loop2_end_block,

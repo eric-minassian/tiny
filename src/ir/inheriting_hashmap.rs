@@ -36,6 +36,10 @@ where
     pub fn get(&self, key: &K) -> Option<V> {
         self.inner.borrow().get(key)
     }
+
+    pub fn is_empty(&self) -> bool {
+        self.inner.borrow().local.is_empty()
+    }
 }
 
 impl<K, V> Clone for InheritingHashMap<K, V>

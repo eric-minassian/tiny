@@ -1,0 +1,5 @@
+main
+var x; {
+    let x <- 1 + 1 + 1;
+    call OutputNum(x)
+}.

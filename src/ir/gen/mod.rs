@@ -264,9 +264,21 @@ impl AstVisitor for IrBodyGenerator<'_> {
     }
 
     fn visit_while_statement(&mut self, while_statement: &WhileStatement) {
-        let join_block = self.create_block(self.cur_block);
-        self.get_block_mut(self.cur_block)
-            .set_edge(ControlFlowEdge::Fallthrough(join_block));
+        // let join_block = self.create_block(self.cur_block);
+        let temp_join_block = self.get_block_mut(self.cur_block);
+        let join_block = if temp_join_block.instructions.is_empty()
+            && temp_join_block.identifier_map.is_empty()
+            && temp_join_block.get_edge().is_none()
+        {
+            self.cur_block
+        } else {
+            let join_block = self.create_block(self.cur_block);
+            self.get_block_mut(self.cur_block)
+                .set_edge(ControlFlowEdge::Fallthrough(join_block));
+
+            join_block
+        };
+
         self.cur_block = join_block;
 
         let phis = PhiDetector::detect(&while_statement.block);

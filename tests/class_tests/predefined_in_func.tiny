@@ -1,0 +1,25 @@
+main
+var outer, inner, blue, rupert;
+function apple (arg1, arg2);
+var red;
+{
+let red <- 3;
+return red + arg1 + arg2
+};
+
+void function getter ();
+{
+call OutputNum(1000);
+};
+
+{
+
+
+let outer <- 20 + 20 + 50 - 10;
+let inner <- outer;
+let blue <- (10+10 + (5 + 5)) + 5;
+let rupert <- call apple(3, 3) + 12;
+
+call getter;
+}
+.

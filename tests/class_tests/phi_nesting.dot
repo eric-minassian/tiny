@@ -1,0 +1,60 @@
+digraph ir {
+subgraph cluster_main {
+	node [shape=record];
+	label="Function main";
+	rankdir=TB;
+	ranksep=1.0;
+	nodesep=0.5;
+
+	BB0_main [width=3.0, height=1.0, label="BB0 | {1: read | 2: read}"];
+	BB0_main -> BB1_main [label="fall-through", fontsize=10];
+	BB1_main [width=3.0, height=1.0, label="BB1 | {3: phi 1 9 | 4: phi 2 40 | 5: phi 0 41 | 6: phi 0 42 | 7: cmp 3 -10 | 8: bge BB13 7}"];
+	BB1_main -> BB2_main [label="fall-through", fontsize=10];
+	BB1_main -> BB13_main [label="branch", fontsize=10];
+	BB0_main -> BB1_main [style=dotted, color=blue, fontsize=10, label="dom", fontcolor=blue];
+	BB2_main [width=3.0, height=1.0, label="BB2 | {9: add 3 -1 | 10: write -111 | 11: writeNL | 12: cmp 4 -5 | 13: ble BB9 12}"];
+	BB2_main -> BB3_main [label="fall-through", fontsize=10];
+	BB2_main -> BB9_main [label="branch", fontsize=10];
+	BB1_main -> BB2_main [style=dotted, color=blue, fontsize=10, label="dom", fontcolor=blue];
+	BB3_main [width=3.0, height=1.0, label="BB3 | {14: phi 4 20 | 15: phi 0 19 | 16: phi -1 21 | 17: cmp 15 -15 | 18: bge BB8 17}"];
+	BB3_main -> BB4_main [label="fall-through", fontsize=10];
+	BB3_main -> BB8_main [label="branch", fontsize=10];
+	BB2_main -> BB3_main [style=dotted, color=blue, fontsize=10, label="dom", fontcolor=blue];
+	BB4_main [width=3.0, height=1.0, label="BB4 | {19: add 15 14}"];
+	BB4_main -> BB5_main [label="fall-through", fontsize=10];
+	BB3_main -> BB4_main [style=dotted, color=blue, fontsize=10, label="dom", fontcolor=blue];
+	BB5_main [width=3.0, height=1.0, label="BB5 | {20: phi 14 24 | 21: phi 16 25 | 22: cmp 21 -20 | 23: bge BB7 22}"];
+	BB5_main -> BB6_main [label="fall-through", fontsize=10];
+	BB5_main -> BB7_main [label="branch", fontsize=10];
+	BB4_main -> BB5_main [style=dotted, color=blue, fontsize=10, label="dom", fontcolor=blue];
+	BB6_main [width=3.0, height=1.0, label="BB6 | {24: mul 20 -1 | 25: add 21 -1 | 26: bra BB5}"];
+	BB6_main -> BB5_main [label="branch", fontsize=10];
+	BB5_main -> BB6_main [style=dotted, color=blue, fontsize=10, label="dom", fontcolor=blue];
+	BB7_main [width=3.0, height=1.0, label="BB7 | {27: bra BB3}"];
+	BB7_main -> BB3_main [label="branch", fontsize=10];
+	BB5_main -> BB7_main [style=dotted, color=blue, fontsize=10, label="dom", fontcolor=blue];
+	BB8_main [width=3.0, height=1.0, label="BB8 | {28: sub 14 -1 | 29: write 28 | 30: writeNL | 31: bra BB12}"];
+	BB8_main -> BB12_main [label="branch", fontsize=10];
+	BB3_main -> BB8_main [style=dotted, color=blue, fontsize=10, label="dom", fontcolor=blue];
+	BB9_main [width=3.0, height=1.0, label="BB9 | {32: phi -1 35 | 33: cmp 32 -20 | 34: bge BB11 33}"];
+	BB9_main -> BB10_main [label="fall-through", fontsize=10];
+	BB9_main -> BB11_main [label="branch", fontsize=10];
+	BB2_main -> BB9_main [style=dotted, color=blue, fontsize=10, label="dom", fontcolor=blue];
+	BB10_main [width=3.0, height=1.0, label="BB10 | {35: add 32 4 | 36: bra BB9}"];
+	BB10_main -> BB9_main [label="branch", fontsize=10];
+	BB9_main -> BB10_main [style=dotted, color=blue, fontsize=10, label="dom", fontcolor=blue];
+	BB11_main [width=3.0, height=1.0, label="BB11 | {37: add 4 -1 | 38: write 37 | 39: writeNL}"];
+	BB11_main -> BB12_main [label="fall-through", fontsize=10];
+	BB9_main -> BB11_main [style=dotted, color=blue, fontsize=10, label="dom", fontcolor=blue];
+	BB12_main [width=3.0, height=1.0, label="BB12 | {40: phi 28 37 | 41: phi 15 0 | 42: phi 16 32 | 43: write 40 | 44: writeNL | 45: bra BB1}"];
+	BB12_main -> BB1_main [label="branch", fontsize=10];
+	BB2_main -> BB12_main [style=dotted, color=blue, fontsize=10, label="dom", fontcolor=blue];
+	BB13_main [width=3.0, height=1.0, label="BB13 | {46: write 3 | 47: writeNL | 48: write 4 | 49: writeNL | 50: end}"];
+	BB1_main -> BB13_main [style=dotted, color=blue, fontsize=10, label="dom", fontcolor=blue];
+}
+subgraph const_block {
+	const_block [shape=record, width=3.0, height=1.0, label="Const | {-111: const# 111 | -20: const# 20 | -15: const# 15 | -10: const# 10 | -5: const# 5 | -1: const# 1 | 0: const# 0}"];
+	const_block -> BB0_main [label="fall-through", fontsize=10];
+	const_block -> BB0_main [label="dom", color=blue, style=dotted, fontsize=10, fontcolor=blue];
+}
+}

@@ -1,0 +1,64 @@
+digraph ir {
+subgraph cluster_1 {
+	node [shape=record];
+	label="Function 1";
+	rankdir=TB;
+	ranksep=1.0;
+	nodesep=0.5;
+
+	BB0_1 [width=3.0, height=1.0, label="BB0 | {1: getpar1 | 2: getpar2 | 3: cmp 2 0 | 4: bne BB2 3}"];
+	BB0_1 -> BB1_1 [label="fall-through", fontsize=10];
+	BB0_1 -> BB2_1 [label="branch", fontsize=10];
+	BB1_1 [width=3.0, height=1.0, label="BB1 | {5: ret 1}"];
+	BB0_1 -> BB1_1 [style=dotted, color=blue, fontsize=10, label="dom", fontcolor=blue];
+	BB2_1 [width=3.0, height=1.0, label="BB2 | {6: phi 1 9 | 7: cmp 6 0 | 8: bge BB4 7}"];
+	BB2_1 -> BB3_1 [label="fall-through", fontsize=10];
+	BB2_1 -> BB4_1 [label="branch", fontsize=10];
+	BB0_1 -> BB2_1 [style=dotted, color=blue, fontsize=10, label="dom", fontcolor=blue];
+	BB3_1 [width=3.0, height=1.0, label="BB3 | {9: add 6 2 | 10: bra BB2}"];
+	BB3_1 -> BB2_1 [label="branch", fontsize=10];
+	BB2_1 -> BB3_1 [style=dotted, color=blue, fontsize=10, label="dom", fontcolor=blue];
+	BB4_1 [width=3.0, height=1.0, label="BB4 | {11: phi 6 14 | 12: cmp 11 2 | 13: blt BB6 12}"];
+	BB4_1 -> BB5_1 [label="fall-through", fontsize=10];
+	BB4_1 -> BB6_1 [label="branch", fontsize=10];
+	BB2_1 -> BB4_1 [style=dotted, color=blue, fontsize=10, label="dom", fontcolor=blue];
+	BB5_1 [width=3.0, height=1.0, label="BB5 | {14: sub 11 2 | 15: bra BB4}"];
+	BB5_1 -> BB4_1 [label="branch", fontsize=10];
+	BB4_1 -> BB5_1 [style=dotted, color=blue, fontsize=10, label="dom", fontcolor=blue];
+	BB6_1 [width=3.0, height=1.0, label="BB6 | {16: ret 11}"];
+	BB4_1 -> BB6_1 [style=dotted, color=blue, fontsize=10, label="dom", fontcolor=blue];
+}
+subgraph cluster_4 {
+	node [shape=record];
+	label="Function 4";
+	rankdir=TB;
+	ranksep=1.0;
+	nodesep=0.5;
+
+	BB0_4 [width=3.0, height=1.0, label="BB0 | {1: getpar1 | 2: getpar2 | 3: cmp 1 0 | 4: bne BB2 3}"];
+	BB0_4 -> BB1_4 [label="fall-through", fontsize=10];
+	BB0_4 -> BB2_4 [label="branch", fontsize=10];
+	BB1_4 [width=3.0, height=1.0, label="BB1 | {5: ret 2}"];
+	BB0_4 -> BB1_4 [style=dotted, color=blue, fontsize=10, label="dom", fontcolor=blue];
+	BB2_4 [width=3.0, height=1.0, label="BB2 | {6: setpar1 1 | 7: setpar2 2 | 8: jsr func#1 | 9: setpar1 2 | 10: setpar2 8 | 11: jsr func#4 | 12: ret 11}"];
+	BB0_4 -> BB2_4 [style=dotted, color=blue, fontsize=10, label="dom", fontcolor=blue];
+}
+subgraph cluster_main {
+	node [shape=record];
+	label="Function main";
+	rankdir=TB;
+	ranksep=1.0;
+	nodesep=0.5;
+
+	BB0_main [width=3.0, height=1.0, label="BB0 | {1: setpar1 -110 | 2: setpar2 -121 | 3: jsr func#4 | 4: write 3 | 5: writeNL | 6: end}"];
+}
+subgraph const_block {
+	const_block [shape=record, width=3.0, height=1.0, label="Const | {-121: const# 121 | -110: const# 110 | 0: const# 0}"];
+	const_block -> BB0_1 [label="fall-through", fontsize=10];
+	const_block -> BB0_1 [label="dom", color=blue, style=dotted, fontsize=10, fontcolor=blue];
+	const_block -> BB0_4 [label="fall-through", fontsize=10];
+	const_block -> BB0_4 [label="dom", color=blue, style=dotted, fontsize=10, fontcolor=blue];
+	const_block -> BB0_main [label="fall-through", fontsize=10];
+	const_block -> BB0_main [label="dom", color=blue, style=dotted, fontsize=10, fontcolor=blue];
+}
+}

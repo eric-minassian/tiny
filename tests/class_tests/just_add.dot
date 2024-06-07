@@ -1,0 +1,16 @@
+digraph ir {
+subgraph cluster_main {
+	node [shape=record];
+	label="Function main";
+	rankdir=TB;
+	ranksep=1.0;
+	nodesep=0.5;
+
+	BB0_main [width=3.0, height=1.0, label="BB0 | {1: add -1 -1 | 2: end}"];
+}
+subgraph const_block {
+	const_block [shape=record, width=3.0, height=1.0, label="Const | {-1: const# 1}"];
+	const_block -> BB0_main [label="fall-through", fontsize=10];
+	const_block -> BB0_main [label="dom", color=blue, style=dotted, fontsize=10, fontcolor=blue];
+}
+}

@@ -1,0 +1,26 @@
+digraph ir {
+subgraph cluster_main {
+	node [shape=record];
+	label="Function main";
+	rankdir=TB;
+	ranksep=1.0;
+	nodesep=0.5;
+
+	BB0_main [width=3.0, height=1.0, label="BB0 | {1: add 0 -1 | 2: read | 3: sub 2 -1}"];
+	BB0_main -> BB1_main [label="fall-through", fontsize=10];
+	BB1_main [width=3.0, height=1.0, label="BB1 | {4: phi 0 5 | 5: phi -1 10 | 6: phi 2 11 | 7: phi 3 5 | 8: cmp 6 0 | 9: ble BB3 8}"];
+	BB1_main -> BB2_main [label="fall-through", fontsize=10];
+	BB1_main -> BB3_main [label="branch", fontsize=10];
+	BB0_main -> BB1_main [style=dotted, color=blue, fontsize=10, label="dom", fontcolor=blue];
+	BB2_main [width=3.0, height=1.0, label="BB2 | {10: add 4 5 | 11: sub 6 -1 | 12: bra BB1}"];
+	BB2_main -> BB1_main [label="branch", fontsize=10];
+	BB1_main -> BB2_main [style=dotted, color=blue, fontsize=10, label="dom", fontcolor=blue];
+	BB3_main [width=3.0, height=1.0, label="BB3 | {13: write 4 | 14: writeNL | 15: end}"];
+	BB1_main -> BB3_main [style=dotted, color=blue, fontsize=10, label="dom", fontcolor=blue];
+}
+subgraph const_block {
+	const_block [shape=record, width=3.0, height=1.0, label="Const | {-1: const# 1 | 0: const# 0}"];
+	const_block -> BB0_main [label="fall-through", fontsize=10];
+	const_block -> BB0_main [label="dom", color=blue, style=dotted, fontsize=10, fontcolor=blue];
+}
+}

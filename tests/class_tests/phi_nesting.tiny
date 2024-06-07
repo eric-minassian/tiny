@@ -1,0 +1,40 @@
+main
+var x,k,j,m;
+{
+let x <- call InputNum;
+let k <- call InputNum();
+while x < 10 do
+    let j <- 0;
+    let m <- 1;
+
+    let x <- x + 1;
+    call OutputNum(111);
+    call OutputNewLine();
+    if k > 5 then
+        while j < 15 do
+            let j <- j + k;
+            while m < 20 do
+                let k <- k * 1;
+                let m <- m + 1
+            od
+        od;
+        let k <- k - 1;
+        call OutputNum(k);
+        call OutputNewLine
+    else
+        while m < 20 do
+            let m <- m + k
+        od;
+        let k <- k + 1;
+        call OutputNum(k);
+        call OutputNewLine
+    fi;
+    call OutputNum(k);
+    call OutputNewLine
+od;
+call OutputNum(x);
+call OutputNewLine;
+call OutputNum(k);
+call OutputNewLine
+}
+.
