@@ -1,0 +1,46 @@
+digraph ir {
+subgraph cluster_main {
+	node [shape=record];
+	label="Function main";
+	rankdir=TB;
+	ranksep=1.0;
+	nodesep=0.5;
+
+	BB0_main [width=3.0, height=1.0, label="BB0 | {1: read | 2: read | 3: cmp 1 0 | 4: ble BB5 3}"];
+	BB0_main -> BB1_main [label="fall-through", fontsize=10];
+	BB0_main -> BB5_main [label="branch", fontsize=10];
+	BB1_main [width=3.0, height=1.0, label="BB1 | {5: cmp 2 0 | 6: ble BB3 5}"];
+	BB1_main -> BB2_main [label="fall-through", fontsize=10];
+	BB1_main -> BB3_main [label="branch", fontsize=10];
+	BB0_main -> BB1_main [style=dotted, color=blue, fontsize=10, label="dom", fontcolor=blue];
+	BB2_main [width=3.0, height=1.0, label="BB2 | {7: write 0 | 8: bra BB4}"];
+	BB2_main -> BB4_main [label="branch", fontsize=10];
+	BB1_main -> BB2_main [style=dotted, color=blue, fontsize=10, label="dom", fontcolor=blue];
+	BB3_main [width=3.0, height=1.0, label="BB3 | {9: write -1}"];
+	BB3_main -> BB4_main [label="fall-through", fontsize=10];
+	BB1_main -> BB3_main [style=dotted, color=blue, fontsize=10, label="dom", fontcolor=blue];
+	BB4_main [width=3.0, height=1.0, label="BB4 | {10: bra BB9}"];
+	BB4_main -> BB9_main [label="branch", fontsize=10];
+	BB1_main -> BB4_main [style=dotted, color=blue, fontsize=10, label="dom", fontcolor=blue];
+	BB5_main [width=3.0, height=1.0, label="BB5 | {11: cmp 2 0 | 12: ble BB7 11}"];
+	BB5_main -> BB6_main [label="fall-through", fontsize=10];
+	BB5_main -> BB7_main [label="branch", fontsize=10];
+	BB0_main -> BB5_main [style=dotted, color=blue, fontsize=10, label="dom", fontcolor=blue];
+	BB6_main [width=3.0, height=1.0, label="BB6 | {13: write -1 | 14: bra BB8}"];
+	BB6_main -> BB8_main [label="branch", fontsize=10];
+	BB5_main -> BB6_main [style=dotted, color=blue, fontsize=10, label="dom", fontcolor=blue];
+	BB7_main [width=3.0, height=1.0, label="BB7 | {15: write 0}"];
+	BB7_main -> BB8_main [label="fall-through", fontsize=10];
+	BB5_main -> BB7_main [style=dotted, color=blue, fontsize=10, label="dom", fontcolor=blue];
+	BB8_main [width=3.0, height=1.0, label="BB8 | {\<empty\>}"];
+	BB8_main -> BB9_main [label="fall-through", fontsize=10];
+	BB5_main -> BB8_main [style=dotted, color=blue, fontsize=10, label="dom", fontcolor=blue];
+	BB9_main [width=3.0, height=1.0, label="BB9 | {16: end}"];
+	BB0_main -> BB9_main [style=dotted, color=blue, fontsize=10, label="dom", fontcolor=blue];
+}
+subgraph const_block {
+	const_block [shape=record, width=3.0, height=1.0, label="Const | {-1: const# 1 | 0: const# 0}"];
+	const_block -> BB0_main [label="fall-through", fontsize=10];
+	const_block -> BB0_main [label="dom", color=blue, style=dotted, fontsize=10, fontcolor=blue];
+}
+}
